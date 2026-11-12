@@ -1,0 +1,1337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARC Vehicle Monitoring</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;700;900&family=Overpass+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* Layout idea: a highway-sign header over a survey desk - video stage left, running count right,
+     class tiles, then the survey sheet (chart + table) and the audit strip. Single light theme by choice. */
+  color-scheme: light;
+  --bg: #edf1ee;
+  --panel: #ffffff;
+  --ink: #0f1f18;
+  --ink-2: #4b5b54;
+  --ink-3: #7b8882;
+  --rule: #d6ded9;
+  --sign: #0a6b45;        /* highway direction-sign green */
+  --sign-deep: #064a30;
+  --marker: #f6c20a;      /* kilometre-stone and road-marking yellow */
+  --asphalt: #23292b;
+  --good: #1b7f3b;
+  --warn: #a8650a;
+  --crit: #b3261e;
+  --font: "Overpass", "Segoe UI", Roboto, Arial, sans-serif;
+  --mono: "Overpass Mono", ui-monospace, Consolas, monospace;
+  --chart-font: "Times New Roman", Times, serif;
+  --r: 10px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 15px; line-height: 1.45; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 3px solid var(--marker); outline-offset: 2px; }
+h1, h2, h3 { margin: 0; text-wrap: balance; }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+/* Header: the sign board */
+.board { background: var(--sign); color: #fff; border-bottom: 4px solid var(--sign-deep); position: relative; }
+.board::after { content: ""; position: absolute; left: 0; right: 0; bottom: -10px; height: 2px;
+  background: repeating-linear-gradient(90deg, var(--ink-3) 0 22px, transparent 22px 40px); opacity: .45; }
+.board-in { max-width: 1320px; margin: 0 auto; padding: 14px 20px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 14px; margin-right: auto; }
+.brand svg { flex: none; }
+.brand h1 { font-size: 24px; font-weight: 900; letter-spacing: .01em; line-height: 1.1; }
+.brand p { margin: 2px 0 0; font-size: 13px; opacity: .88; }
+.chip { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: 999px; font-size: 12.5px; font-weight: 600;
+  background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.3); white-space: nowrap; }
+.chip i { width: 8px; height: 8px; border-radius: 50%; background: #cfd8d3; flex: none; }
+.chip.ok i { background: #7be3a4; } .chip.busy i { background: var(--marker); } .chip.bad i { background: #ff9d94; }
+.linkbtn { background: none; border: 0; color: inherit; text-decoration: underline; padding: 0; font-size: 12.5px; }
+
+main { max-width: 1320px; margin: 0 auto; padding: 26px 20px 48px; display: grid; gap: 18px; }
+.card { background: var(--panel); border: 1px solid var(--rule); border-radius: var(--r); }
+.card-h { display: flex; align-items: baseline; gap: 12px; padding: 14px 16px 0; flex-wrap: wrap; }
+.card-h h2 { font-size: 15px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.card-h .hint { color: var(--ink-2); font-size: 13px; }
+.card-b { padding: 14px 16px 16px; }
+.banner { padding: 10px 14px; border-radius: 8px; font-size: 13.5px; border: 1px solid; display: flex; gap: 10px; align-items: flex-start; }
+.banner.info { background: #f2f7f4; border-color: #c8d9cf; }
+.banner.warn { background: #fff7e3; border-color: #ecd28a; color: #5a3d00; }
+.banner.crit { background: #fdecea; border-color: #f0b8b3; color: #7a1610; }
+.banner b { font-weight: 700; }
+[hidden] { display: none !important; }
+
+/* Row 1 */
+.top { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(300px, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 960px) { .top { grid-template-columns: 1fr; } }
+.stage { position: relative; background: var(--asphalt); border-radius: var(--r) var(--r) 0 0; overflow: hidden; aspect-ratio: 16 / 9; }
+.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; touch-action: none; }
+.stage video { position: absolute; width: 2px; height: 2px; opacity: 0; pointer-events: none; left: 0; top: 0; }
+.drop { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; color: #fff; padding: 20px;
+  background: repeating-linear-gradient(180deg, rgba(255,255,255,.34) 0 30px, transparent 30px 58px) 22% 0 / 5px 100% no-repeat,
+    repeating-linear-gradient(180deg, rgba(255,255,255,.34) 0 30px, transparent 30px 58px) 78% 0 / 5px 100% no-repeat, var(--asphalt); }
+.drop::after { content: ""; position: absolute; left: 4%; right: 4%; bottom: 14%; height: 4px; background: var(--marker); box-shadow: 0 0 0 1px rgba(0,0,0,.6); }
+.drop.over { background-color: var(--sign-deep); }
+.drop > * { position: relative; z-index: 1; }
+.drop h2 { font-size: 22px; font-weight: 900; }
+.drop p { margin: 0; max-width: 46ch; font-size: 14px; opacity: .9; }
+.btn { border: 1px solid var(--rule); background: #fff; border-radius: 8px; padding: 9px 14px; font-weight: 700; font-size: 14px; display: inline-flex; align-items: center; gap: 8px; }
+.btn:hover { border-color: var(--ink-3); }
+.btn.primary { background: var(--sign); border-color: var(--sign-deep); color: #fff; }
+.btn.primary:hover { background: var(--sign-deep); }
+.btn.accent { background: var(--marker); border-color: #b98f00; color: #1c1600; }
+.btn.small { padding: 5px 10px; font-size: 13px; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.overlay-msg { position: absolute; left: 12px; bottom: 12px; right: 12px; display: flex; gap: 10px; align-items: center; background: rgba(15,31,24,.88); color: #fff; padding: 10px 12px; border-radius: 8px; font-size: 13.5px; }
+.overlay-msg .bar { flex: 1; height: 6px; border-radius: 3px; background: rgba(255,255,255,.2); overflow: hidden; min-width: 60px; }
+.overlay-msg .bar b { display: block; height: 100%; width: 0; background: var(--marker); }
+.transport { padding: 12px 16px; display: grid; gap: 10px; }
+.progress { height: 10px; border-radius: 5px; background: #e4eae6; overflow: hidden; }
+.progress b { display: block; height: 100%; width: 0; background: var(--sign); }
+.trow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.trow .grow { flex: 1; }
+.meta { font-size: 13px; color: var(--ink-2); }
+.meta .num { color: var(--ink); font-weight: 700; }
+details.settings { border-top: 1px solid var(--rule); }
+details.settings summary { padding: 11px 16px; font-weight: 700; font-size: 13.5px; cursor: pointer; }
+.set-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px 18px; padding: 2px 16px 16px; }
+.field { display: grid; gap: 4px; font-size: 13px; }
+.field label, .field .lab { font-weight: 700; }
+.field small { color: var(--ink-2); }
+.field select, .field input[type=text], .field input[type=email], .field input[type=tel] { border: 1px solid var(--rule); border-radius: 7px; padding: 8px 10px; background: #fff; width: 100%; }
+.check { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; }
+.check input { margin-top: 3px; }
+
+/* Summary column */
+.sum { display: grid; gap: 14px; }
+.total { padding: 16px; display: grid; gap: 4px; border-top: 6px solid var(--marker); border-radius: var(--r); }
+.total .lab { font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); }
+.total .big { font-family: var(--mono); font-weight: 700; font-size: 68px; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.total .sub { font-size: 13px; color: var(--ink-2); }
+.dirs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.dir { padding: 12px 14px; }
+.dir .lab { font-size: 12.5px; font-weight: 700; color: var(--ink-2); display: flex; gap: 6px; align-items: center; }
+.dir .lab b { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 4px; background: var(--ink); color: #fff; font-size: 12px; }
+.dir .v { font-family: var(--mono); font-size: 30px; font-weight: 700; line-height: 1.15; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 13.5px; padding: 14px 16px; }
+.kv dt { color: var(--ink-2); } .kv dd { margin: 0; font-weight: 700; text-align: right; }
+
+/* Class tiles */
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+.tile { position: relative; padding: 12px 12px 12px 18px; display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; overflow: hidden; }
+.tile::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 7px; background: var(--c); }
+.tile .ico { color: var(--c); grid-row: 1; grid-column: 2; }
+.tile .name { font-weight: 700; font-size: 14px; white-space: nowrap; }
+.tile .sub { grid-column: 1 / -1; font-size: 12px; color: var(--ink-2); min-height: 1.4em; }
+.tile .v { font-family: var(--mono); font-size: 36px; font-weight: 700; line-height: 1.05; }
+.tile .share { align-self: end; justify-self: end; font-size: 13px; color: var(--ink-2); }
+.tile .add { position: absolute; right: 8px; bottom: 8px; width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--rule); background: #fff; font-weight: 900; line-height: 1; }
+.tile .share { padding-right: 34px; }
+.tile.off .v { color: var(--ink-3); }
+.tile .tag { font-size: 11px; font-weight: 700; color: var(--warn); }
+
+/* Survey sheet */
+.sheet { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 960px) { .sheet { grid-template-columns: 1fr; } }
+.chart-wrap { position: relative; }
+.chart-wrap svg { width: 100%; height: auto; display: block; font-family: var(--chart-font); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-family: var(--chart-font); color: #000; font-size: 14px; margin-top: 6px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 12px; height: 12px; border-radius: 3px; background: var(--c); }
+.tip { position: absolute; pointer-events: none; background: #fff; border: 1px solid #000; padding: 6px 8px; font-family: var(--chart-font); color: #000; font-size: 13.5px; line-height: 1.3; border-radius: 4px; white-space: nowrap; z-index: 3; }
+.tblwrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { padding: 7px 8px; border-bottom: 1px solid var(--rule); text-align: right; white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-2); }
+td .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--c); margin-right: 8px; }
+tfoot td { font-weight: 700; border-top: 2px solid var(--ink); border-bottom: 0; }
+td.num { font-weight: 500; }
+
+/* Audit strip */
+.audit-tools { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.audit-tools select { border: 1px solid var(--rule); border-radius: 7px; padding: 6px 8px; background: #fff; }
+.strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 10px; }
+.ev { border: 1px solid var(--rule); border-radius: 8px; background: #fff; padding: 0; overflow: hidden; text-align: left; display: grid; }
+.ev:hover { border-color: var(--ink-3); }
+.ev .ph { aspect-ratio: 4 / 3; background: #e9eeea center / contain no-repeat; display: grid; place-items: center; color: var(--ink-3); font-size: 11px; }
+.ev .cap { padding: 5px 7px 6px; border-top: 4px solid var(--c); font-size: 12px; line-height: 1.25; }
+.ev .cap b { display: block; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev .cap span { color: var(--ink-2); font-family: var(--mono); font-size: 11.5px; }
+.ev.removed { opacity: .45; } .ev.removed .cap b { text-decoration: line-through; }
+.ev.edited .cap b::after { content: " (edited)"; font-weight: 400; color: var(--ink-2); }
+.empty { color: var(--ink-2); font-size: 13.5px; padding: 6px 0; }
+
+/* Dialogs */
+.scrim { position: fixed; inset: 0; background: rgba(15,31,24,.55); display: grid; place-items: center; padding: 16px; z-index: 20; overflow: auto; }
+.dialog { background: #fff; border-radius: 12px; width: min(560px, 100%); padding: 20px; display: grid; gap: 14px; border-top: 8px solid var(--marker); }
+.dialog h2 { font-size: 20px; font-weight: 900; }
+.dialog p { margin: 0; color: var(--ink-2); font-size: 14px; }
+.opts { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.opt { border: 1px solid var(--rule); border-left: 7px solid var(--c); border-radius: 7px; background: #fff; padding: 8px 10px; text-align: left; font-weight: 700; font-size: 13.5px; }
+.opt[aria-pressed=true] { background: #eef5f1; border-color: var(--sign); border-left-color: var(--c); }
+.dialog .row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.dialog .evbig { display: flex; gap: 14px; align-items: center; }
+.dialog .evbig img { width: 180px; max-width: 45%; border-radius: 8px; border: 1px solid var(--rule); }
+.err { color: var(--crit); font-size: 13.5px; font-weight: 600; min-height: 1.3em; }
+.signin .dialog { width: min(460px, 100%); }
+.notes { font-size: 13.5px; color: var(--ink-2); display: grid; gap: 6px; padding-left: 18px; margin: 0; max-width: 100ch; }
+.notes b { color: var(--ink); }
+.foot { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 14px; z-index: 30; max-width: calc(100% - 32px); }
+@media (max-width: 520px) { .total .big { font-size: 52px; } .brand h1 { font-size: 20px; } }
+@media (prefers-reduced-motion: no-preference) { .progress b, .overlay-msg .bar b { transition: width .25s linear; } }
+</style>
+</head>
+<body>
+
+<header class="board">
+  <div class="board-in">
+    <div class="brand">
+      <svg width="42" height="52" viewBox="0 0 42 52" aria-hidden="true">
+        <path d="M3 50V19C3 9 11 2 21 2s18 7 18 17v31z" fill="#fff" stroke="#0f1f18" stroke-width="2.5"/>
+        <path d="M4.3 22v-3C4.3 9.800000000000001 11.8 3.3 21 3.3S37.7 9.8 37.7 19v3z" fill="#f6c20a"/>
+        <text x="21" y="18.5" text-anchor="middle" font-family="Overpass, Arial, sans-serif" font-weight="900" font-size="11.5" fill="#0f1f18">ARC</text>
+        <text x="21" y="36" text-anchor="middle" font-family="Overpass, Arial, sans-serif" font-weight="900" font-size="12" fill="#0f1f18">VM</text>
+        <text x="21" y="46" text-anchor="middle" font-family="Overpass, Arial, sans-serif" font-weight="700" font-size="6.5" fill="#0f1f18">COUNT</text>
+      </svg>
+      <div>
+        <h1>ARC Vehicle Monitoring</h1>
+        <p>Classified traffic volume count from road video, for Indian vehicle classes</p>
+      </div>
+    </div>
+    <span class="chip" id="engineChip"><i></i><span id="engineText">Detector not loaded</span></span>
+    <span class="chip" id="syncChip"><i></i><span id="syncText">Preview mode</span></span>
+    <span class="chip" id="userChip" hidden><span id="userText"></span> <button class="linkbtn" id="signOut" type="button">Sign out</button></span>
+  </div>
+</header>
+
+<main>
+  <div class="banner info" id="previewBanner" hidden>
+    <span><b>Preview mode.</b> Sign-in and Google Drive logging are switched off because no log address is set in <span class="num">config.js</span>. Counting works fully.</span>
+  </div>
+  <div class="banner warn" id="warnBanner" hidden><span id="warnText"></span></div>
+
+  <section class="top">
+    <div class="card">
+      <div class="stage" id="stage">
+        <video id="video" muted playsinline preload="auto"></video>
+        <canvas id="view" width="1280" height="720" aria-label="Video with detected vehicles and the counting line"></canvas>
+        <div class="drop" id="drop">
+          <h2>Add a road video to start counting</h2>
+          <p id="dropText">Recorded video (MP4, MOV, WebM), a video link, or a live stream. The video is analysed on this computer and is never uploaded. Vehicles are counted when they cross the yellow line.</p>
+          <div class="trow" style="justify-content:center">
+            <button class="btn accent" id="pick" type="button">Choose video file</button>
+            <button class="btn" id="linkOpen" type="button">Use a link or live source</button>
+          </div>
+          <input type="file" id="file" accept="video/*,.mp4,.mov,.webm,.mkv,.m4v" hidden>
+        </div>
+        <div class="overlay-msg" id="loadMsg" hidden><span id="loadText">Loading</span><span class="bar"><b id="loadBar"></b></span><span class="num" id="loadPct"></span></div>
+      </div>
+      <div class="transport">
+        <div class="progress" aria-hidden="true"><b id="progBar"></b></div>
+        <div class="trow">
+          <button class="btn primary" id="startBtn" type="button" disabled>Start analysis</button>
+          <button class="btn" id="pauseBtn" type="button" hidden>Pause</button>
+          <button class="btn" id="restartBtn" type="button" hidden>Restart from 0:00</button>
+          <button class="btn" id="stopBtn" type="button" hidden>Stop and finish</button>
+          <button class="btn" id="changeBtn" type="button" hidden>Change video</button>
+          <button class="btn" id="linkBtn" type="button" hidden>Link or live source</button>
+          <span class="grow"></span>
+          <span class="meta"><span class="num" id="tNow">00:00</span> / <span class="num" id="tDur">00:00</span></span>
+          <span class="meta">Speed <span class="num" id="speed">-</span></span>
+        </div>
+        <div class="meta" id="stageHint">Drag the two round handles to place the counting line across the carriageway, where vehicles are large and clearly visible.</div>
+      </div>
+      <details class="settings" id="settings">
+        <summary>Detection settings</summary>
+        <div class="set-grid">
+          <div class="field">
+            <label for="modelSel">Detector</label>
+            <select id="modelSel">
+              <option value="india">Indian traffic (recommended)</option>
+              <option value="accurate">General</option>
+              <option value="fast">General, fast (slow computers)</option>
+              <option value="custom">Your own model file (.onnx)</option>
+            </select>
+            <small id="modelHelp">Trained on Indian roads (IISc UVH-26): two-wheeler, auto-rickshaw, car types, bus, mini-bus, LCV, truck, bicycle.</small>
+          </div>
+          <div class="field" id="customBox" hidden>
+            <span class="lab">Model file</span>
+            <button class="btn small" id="customPick" type="button">Choose .onnx file</button>
+            <input type="file" id="customFile" accept=".onnx" hidden>
+            <label for="customNames">Class names, in model order</label>
+            <input type="text" id="customNames" placeholder="Hatchback, Sedan, SUV, MUV, Bus, Truck, Three-wheeler, ...">
+            <label for="customSize">Input size</label>
+            <select id="customSize"><option>640</option><option>416</option><option>512</option><option>800</option><option>960</option><option>1280</option></select>
+            <small id="customInfo">YOLO exports from Ultralytics (v5 to v11, 26) and YOLOX are supported.</small>
+          </div>
+          <div class="field">
+            <label for="rateSel">Frames analysed per second of video</label>
+            <select id="rateSel"><option value="8">8 (faster)</option><option value="12" selected>12 (standard)</option><option value="15">15 (fast traffic)</option></select>
+            <small>Higher is safer for fast vehicles and takes longer.</small>
+          </div>
+          <div class="field">
+            <label for="confSel">Detection confidence</label>
+            <select id="confSel"><option value="0.3">Sensitive (0.30)</option><option value="0.4" selected>Balanced (0.40)</option><option value="0.5">Strict (0.50)</option></select>
+            <small>Sensitive finds more small or hidden vehicles and may add false counts.</small>
+          </div>
+          <div class="field">
+            <span class="lab">Options</span>
+            <label class="check"><input type="checkbox" id="autoRule" checked> <span>Mark yellow three-wheelers as auto-rickshaw (colour rule, General detectors only)</span></label>
+            <label class="check"><input type="checkbox" id="showBoxes" checked> <span>Draw boxes on the video</span></label>
+          </div>
+          <div class="field">
+            <label for="dirA">Direction names</label>
+            <input type="text" id="dirA" value="Direction A" maxlength="40" aria-label="Name of direction A">
+            <input type="text" id="dirB" value="Direction B" maxlength="40" aria-label="Name of direction B">
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <div class="sum">
+      <div class="card total">
+        <span class="lab">Vehicles counted</span>
+        <span class="big" id="total">0</span>
+        <span class="sub" id="totalSub">No video analysed yet</span>
+      </div>
+      <div class="dirs">
+        <div class="card dir"><div class="lab"><b>A</b><span id="dirALab">Direction A</span></div><div class="v" id="dirAV">0</div></div>
+        <div class="card dir"><div class="lab"><b>B</b><span id="dirBLab">Direction B</span></div><div class="v" id="dirBV">0</div></div>
+      </div>
+      <dl class="card kv">
+        <dt>Flow rate</dt><dd><span class="num" id="flow">-</span> veh/h</dd>
+        <dt>Video analysed</dt><dd><span class="num" id="analysed">00:00</span></dd>
+        <dt>Vehicles in view now</dt><dd><span class="num" id="inView">0</span></dd>
+        <dt>Sampling achieved</dt><dd><span class="num" id="fpsReal">-</span></dd>
+        <dt>Manual corrections</dt><dd><span class="num" id="edits">0</span></dd>
+        <dt>Video file</dt><dd id="fileName" style="font-weight:600;overflow-wrap:anywhere">-</dd>
+      </dl>
+    </div>
+  </section>
+
+  <section class="tiles" id="tiles" aria-label="Count by vehicle class"></section>
+
+  <section class="sheet">
+    <div class="card">
+      <div class="card-h"><h2>Vehicles over time</h2><span class="hint" id="binHint">Count per interval, stacked by class</span></div>
+      <div class="card-b">
+        <div class="chart-wrap" id="chartWrap"><svg id="chart" viewBox="0 0 760 300" role="img" aria-label="Stacked bar chart of vehicles counted per time interval by class"></svg><div class="tip" id="tip" hidden></div></div>
+        <div class="legend" id="legend"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-h"><h2>Classified count</h2></div>
+      <div class="card-b tblwrap">
+        <table id="tbl">
+          <thead><tr><th>Class</th><th>Count</th><th>Share</th><th id="thA">Dir A</th><th id="thB">Dir B</th></tr></thead>
+          <tbody></tbody>
+          <tfoot><tr><td>Total</td><td class="num" id="ftT">0</td><td class="num">100%</td><td class="num" id="ftA">0</td><td class="num" id="ftB">0</td></tr></tfoot>
+        </table>
+        <div class="foot" style="margin-top:14px">
+          <button class="btn" id="csvBtn" type="button">Download CSV</button>
+          <button class="btn" id="copyBtn" type="button">Copy table</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-h"><h2>Counted vehicles</h2><span class="hint">Every count keeps a picture. Select one to change its class or remove it.</span></div>
+    <div class="card-b">
+      <div class="audit-tools">
+        <label for="auditFilter" class="meta">Show</label>
+        <select id="auditFilter"><option value="all">All classes</option></select>
+        <span class="meta" id="auditCount"></span>
+        <span style="flex:1"></span>
+        <button class="btn small" id="moreBtn" type="button" hidden>Show older</button>
+      </div>
+      <div class="strip" id="strip"></div>
+      <div class="empty" id="stripEmpty">Counted vehicles appear here as the video is analysed.</div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-h"><h2>Getting dependable counts</h2></div>
+    <div class="card-b">
+      <ul class="notes">
+        <li><b>Camera.</b> A steady camera looking down on the road from a footbridge, building or pole gives the best result. Avoid hand-held video and views where vehicles hide one another.</li>
+        <li><b>Counting line.</b> Put it across free-flowing traffic, not at a stop line or junction mouth. Each vehicle is counted once when its centre crosses the line.</li>
+        <li><b>Classes.</b> The Indian traffic detector recognises two-wheelers, auto-rickshaws and goods three-wheelers, cars (hatchback, sedan, SUV, MUV, van), buses, mini-buses, tempo travellers, LCVs, trucks and bicycles. The car and bus sub-types are kept in the CSV export. It has no tractor class; add tractors by hand with the + button on the tile.</li>
+        <li><b>Check.</b> No video counter is exact. Compare a few minutes against a manual count and correct any mistakes in the Counted vehicles strip before you use the totals.</li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<div class="scrim signin" id="signin" hidden>
+  <form class="dialog" id="signForm" novalidate>
+    <h2>Sign in to ARC Vehicle Monitoring</h2>
+    <p id="signLead">Enter your details. A 6-digit code will be sent to your email to confirm it is you.</p>
+    <div id="step1" style="display:grid;gap:12px">
+      <div class="field"><label for="inName">Full name</label><input type="text" id="inName" autocomplete="name" maxlength="80" required></div>
+      <div class="field"><label for="inEmail">Email</label><input type="email" id="inEmail" autocomplete="email" maxlength="120" required></div>
+      <div class="field"><label for="inMobile">Mobile number</label><input type="tel" id="inMobile" autocomplete="tel" maxlength="16" placeholder="10-digit mobile number" required></div>
+    </div>
+    <div id="step2" style="display:grid;gap:12px" hidden>
+      <div class="field"><label for="inCode">Code from your email</label><input type="text" id="inCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 digits"></div>
+      <button class="linkbtn" id="backBtn" type="button" style="justify-self:start;color:var(--sign)">Use a different email</button>
+    </div>
+    <div class="err" id="signErr" role="alert"></div>
+    <div class="row"><button class="btn primary" id="signBtn" type="submit">Send code</button></div>
+    <p style="font-size:12.5px">Your name, email, mobile number and the counts from each run are recorded for the administrator. The video itself stays on your computer.</p>
+  </form>
+</div>
+
+<div class="scrim" id="linkDlg" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="linkTitle">
+    <h2 id="linkTitle">Analyse a link or a live source</h2>
+    <div class="field">
+      <label for="linkUrl">Video link</label>
+      <input type="text" id="linkUrl" inputmode="url" placeholder="https://www.youtube.com/watch?v=...  or  https://example.com/road.mp4">
+      <small>Direct video links (.mp4, .webm, .m3u8) open here when the source site permits it. YouTube and other web players are counted by capturing the tab they play in.</small>
+    </div>
+    <div class="row" style="justify-content:flex-start"><button class="btn primary" id="linkGo" type="button">Open link</button></div>
+    <div class="banner info" id="ytHelp" hidden>
+      <span><b>This is a web player, so it is counted from the screen.</b><br>1. <a id="ytLink" href="#" target="_blank" rel="noopener">Open the video in a new tab</a> and start playing it.<br>2. Come back to this tab and press <b>Capture a tab or window</b>, then pick that tab.</span>
+    </div>
+    <div class="field" id="capBox">
+      <span class="lab">YouTube, live streams, camera viewers</span>
+      <small>Play the video in another browser tab or window, then capture it here. Counting runs in real time while this tab stays visible.</small>
+      <div><button class="btn accent" id="capBtn" type="button">Capture a tab or window</button></div>
+    </div>
+    <div class="err" id="linkErr" role="alert"></div>
+    <div class="row"><button class="btn" id="linkClose" type="button">Close</button></div>
+  </div>
+</div>
+
+<div class="scrim" id="evDlg" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="evTitle">
+    <h2 id="evTitle">Vehicle</h2>
+    <div class="evbig"><img id="evImg" alt="Picture of the counted vehicle"><p id="evInfo"></p></div>
+    <div class="opts" id="evOpts"></div>
+    <div class="row">
+      <button class="btn" id="evRemove" type="button">Not a vehicle, remove</button>
+      <button class="btn primary" id="evClose" type="button">Done</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden role="status"></div>
+
+<script src="config.js"></script>
+<script>
+(() => {
+'use strict';
+const $ = (id) => document.getElementById(id);
+const CFG = window.ARC_CONFIG || {};
+const ENDPOINT = String(CFG.endpoint || '').trim();
+const PREVIEW = !ENDPOINT;
+const LINKS_OK = CFG.liveSources !== false;   // off inside the Claude preview, which blocks outside video and screen capture
+
+/* ---------- Vehicle classes (fixed order, fixed colours) ---------- */
+const CATS = [
+  { id: 'two', label: 'Two-wheeler', sub: 'Motorcycle, scooter, moped', color: '#2a78d6', icon: '<circle cx="9" cy="21" r="5.5"/><circle cx="39" cy="21" r="5.5"/><path d="M9 21l8-9h10l4 5h-9l-3 4zM30 8h6l3 13h-3z"/><rect x="15" y="7" width="11" height="4" rx="2"/>' },
+  { id: 'auto', label: 'Auto-rickshaw', sub: 'Three-wheeler', color: '#eb6834', icon: '<path d="M6 21V11c0-4 3-7 8-7h17c5 0 9 6 11 12v5h-5a5 5 0 00-10 0H17a5 5 0 00-10 0zm9-13v6h9V8zm13 0v6h8c-1-3-3-6-5-6z" fill-rule="evenodd"/><circle cx="12" cy="22" r="4"/><circle cx="32" cy="22" r="4"/>' },
+  { id: 'car', label: 'Car / Jeep / Van', sub: 'Four-wheeler', color: '#1baf7a', icon: '<path d="M3 21v-6l7-2 5-7h15l7 7 8 2v6h-5a5 5 0 00-10 0H19a5 5 0 00-10 0zm15-12l-4 4h9V9zm8 0v4h8l-4-4z" fill-rule="evenodd"/><circle cx="14" cy="22" r="4"/><circle cx="35" cy="22" r="4"/>' },
+  { id: 'bus', label: 'Bus', sub: 'Bus, mini-bus', color: '#eda100', icon: '<path d="M2 22V7c0-2 1-3 3-3h36c3 0 5 2 5 5v13h-5a5 5 0 00-10 0H18a5 5 0 00-10 0zM6 8v6h8V8zm11 0v6h8V8zm11 0v6h8V8zm11 0v6h4V9z" fill-rule="evenodd"/><circle cx="13" cy="23" r="4"/><circle cx="36" cy="23" r="4"/>' },
+  { id: 'lcv', label: 'LCV', sub: 'Mini truck, tempo, pickup', color: '#e87ba4', icon: '<path d="M4 21V9h22v12h-7a5 5 0 00-10 0zm24 0V11h8l8 6v4h-4a5 5 0 00-10 0zm3-7v4h8l-5-4z" fill-rule="evenodd"/><circle cx="14" cy="22" r="4"/><circle cx="35" cy="22" r="4"/>' },
+  { id: 'truck', label: 'Truck', sub: 'Heavy goods vehicle', color: '#008300', icon: '<path d="M1 21V4h29v17h-2a4.500000000000001 4.500000000000001 0 00-9 0h-1a4.500000000000001 4.500000000000001 0 00-9 0zm31 0V8h8l7 7v6h-2a4.500000000000001 4.500000000000001 0 00-9 0zm3-10v4h8l-4-4z" fill-rule="evenodd"/><circle cx="13.5" cy="22.5" r="3.6"/><circle cx="23.5" cy="22.5" r="3.6"/><circle cx="40.5" cy="22.5" r="3.6"/>' },
+  { id: 'tractor', label: 'Tractor', sub: 'With or without trailer', color: '#6250d6', icon: '<path d="M14 4h14v8h10l4 3v5h-3a5 5 0 00-9 0h-3A9 9 0 0016 10.6V6h-2zm5 2v5h7V6z" fill-rule="evenodd"/><path d="M15 12a8 8 0 100 16 8 8 0 000-16zm0 5a3 3 0 110 6 3 3 0 010-6z" fill-rule="evenodd"/><circle cx="35" cy="22.5" r="4"/>' },
+  { id: 'cycle', label: 'Bicycle', sub: 'Pedal cycle', color: '#e34948', icon: '<g fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="10" cy="19" r="7"/><circle cx="38" cy="19" r="7"/><path d="M10 19l8-11h13l7 11M18 8l6 11h-14M31 8l-7 11M15 5h7M29 4h5"/></g>' },
+  { id: 'other', label: 'Other', sub: 'Cart, cycle rickshaw, unclassified', color: '#8a8f8c', icon: '<path d="M4 8h30v10H4z"/><path d="M34 13h10" stroke="currentColor" stroke-width="2.5"/><circle cx="14" cy="21" r="5.5"/><circle cx="14" cy="21" r="2" fill="#fff"/>' }
+];
+const CI = Object.fromEntries(CATS.map((c, i) => [c.id, i]));
+const COCO_MAP = (() => { const m = new Array(80).fill(-1); m[1] = CI.cycle; m[2] = CI.car; m[3] = CI.two; m[5] = CI.bus; m[7] = CI.truck; return m; })();
+const COCO_NAMES = { 1: 'bicycle', 2: 'car', 3: 'motorcycle', 5: 'bus', 7: 'truck' };
+const RUNTIME = { parts: ['ort/runtime.part0.wasm', 'ort/runtime.part1.wasm'], bytes: 21872216 };
+const MODELS = {
+  // IISc UVH-26 detector, trained on Indian urban traffic (YOLOv11-S).
+  india: { name: 'UVH-26 YOLOv11-S', kind: 'ultra', size: 640, bytes: 37948643, parts: ['models/uvh26_s.part0.js', 'models/uvh26_s.part1.js', 'models/uvh26_s.part2.js', 'models/uvh26_s.part3.js', 'models/uvh26_s.part4.js'], names: ['Hatchback', 'Sedan', 'SUV', 'MUV', 'Bus', 'Truck', 'Three-wheeler', 'Two-wheeler', 'LCV', 'Mini-bus', 'Tempo-traveller', 'Bicycle', 'Van', 'Others'] },
+  accurate: { name: 'YOLOX-S', kind: 'yolox', size: 640, bytes: 35858002, parts: ['models/yolox_s.part0.js', 'models/yolox_s.part1.js', 'models/yolox_s.part2.js', 'models/yolox_s.part3.js'] },
+  fast: { name: 'YOLOX-Tiny', kind: 'yolox', size: 416, bytes: 20219662, parts: ['models/yolox_tiny.part0.js', 'models/yolox_tiny.part1.js', 'models/yolox_tiny.part2.js'] }
+};
+
+const hasRVFC = 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
+
+/* ---------- State ---------- */
+const video = $('video'), view = $('view'), vctx = view.getContext('2d');
+const frame = document.createElement('canvas'), fctx = frame.getContext('2d', { willReadFrequently: true });
+const probe = document.createElement('canvas'); probe.width = probe.height = 20;
+const pctx = probe.getContext('2d', { willReadFrequently: true });
+const thumbC = document.createElement('canvas'), tctx = thumbC.getContext('2d');
+const S = {
+  phase: 'empty',            // empty | ready | loading | running | paused | done
+  file: null, url: null, dur: 0, FW: 1280, FH: 720,
+  line: { ax: 0.04, ay: 0.62, bx: 0.96, by: 0.62 },
+  tracks: [], nextTrack: 1, events: [], seq: 0, edits: 0,
+  t: 0, nextT: 0, lastSampleT: -1, samples: 0, busy: false, frameId: 0, flashUntil: -1,
+  wallStart: 0, wallAccum: 0, autoPaused: false, lastDets: [],
+  runId: null, runStarted: null, engineKey: null, backend: null, engineReady: false,
+  custom: null, showAll: false, dirty: true, user: null, lastSync: 0, syncTimer: null,
+  live: false, stream: null, hls: null, remote: false, checked: false, liveT0: 0, hiddenAt: 0, missed: 0
+};
+let worker = null, initResolve = null, initReject = null;
+
+const fmtT = (s) => { s = Math.max(0, Math.floor(s || 0)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), ss = s % 60; return (h ? String(h).padStart(2, '0') + ':' : '') + String(m).padStart(2, '0') + ':' + String(ss).padStart(2, '0'); };
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+let toastTimer = 0;
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 4200); }
+function warn(msg, level) { const b = $('warnBanner'); if (!msg) { b.hidden = true; return; } $('warnText').textContent = msg; b.className = 'banner ' + (level || 'warn'); b.hidden = false; }
+function setChip(id, cls, text) { $(id).className = 'chip ' + cls; $(id === 'engineChip' ? 'engineText' : 'syncText').textContent = text; }
+
+/* ---------- Tracking and counting (pure logic, also used by tests) ---------- */
+// far: how far past the line (as a share of the vehicle's smaller side) the centre must travel before it is counted.
+const P = { conf: 0.4, low: 0.12, maxAge: 1.0, minHits: 3, far: 0.4 };
+function iouBox(a, b, pad) {
+  const ax = a.x - a.w * pad, ay = a.y - a.h * pad, aw = a.w * (1 + 2 * pad), ah = a.h * (1 + 2 * pad);
+  const bx = b.x - b.w * pad, by = b.y - b.h * pad, bw = b.w * (1 + 2 * pad), bh = b.h * (1 + 2 * pad);
+  const x1 = Math.max(ax, bx), y1 = Math.max(ay, by), x2 = Math.min(ax + aw, bx + bw), y2 = Math.min(ay + ah, by + bh);
+  const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+  return inter / (aw * ah + bw * bh - inter + 1e-9);
+}
+// Share of the smaller box that lies inside the other: a box nested in another of the same class is the same vehicle.
+function coverBox(a, b) {
+  const x1 = Math.max(a.x, b.x), y1 = Math.max(a.y, b.y), x2 = Math.min(a.x + a.w, b.x + b.w), y2 = Math.min(a.y + a.h, b.y + b.h);
+  return Math.max(0, x2 - x1) * Math.max(0, y2 - y1) / (Math.min(a.w * a.h, b.w * b.h) + 1e-9);
+}
+function similarity(k, d, t, allowDist) {
+  const dt = t - k.t;
+  const pb = { x: k.cx + k.vx * dt - k.w / 2, y: k.cy + k.vy * dt - k.h / 2, w: k.w, h: k.h };
+  let sim = iouBox(pb, d, 0.08);
+  if (allowDist && sim < 0.3) {
+    const ak = k.w * k.h, ad = d.w * d.h, sr = Math.min(ak, ad) / Math.max(ak, ad);
+    if (sr >= 0.35) {
+      const dc = Math.hypot(pb.x + pb.w / 2 - (d.x + d.w / 2), pb.y + pb.h / 2 - (d.y + d.h / 2));
+      const gate = 0.9 * Math.max(k.w, k.h, d.w, d.h) * (k.hits < 2 ? 1.5 : 1);
+      if (dc < gate) sim = Math.max(sim, 0.3 * (1 - dc / gate));
+    }
+  }
+  return sim;
+}
+function greedy(tracks, dets, t, thr, allowDist) {
+  const pairs = [];
+  for (let i = 0; i < tracks.length; i++) for (let j = 0; j < dets.length; j++) {
+    const s = similarity(tracks[i], dets[j], t, allowDist);
+    if (s >= thr) pairs.push([s, i, j]);
+  }
+  pairs.sort((a, b) => b[0] - a[0]);
+  const ut = new Set(tracks.keys()), ud = new Set(dets.keys()), m = [];
+  for (const [, i, j] of pairs) if (ut.has(i) && ud.has(j)) { ut.delete(i); ud.delete(j); m.push([tracks[i], dets[j]]); }
+  return { m, ut: [...ut].map((i) => tracks[i]), ud: [...ud].map((j) => dets[j]) };
+}
+function bestCat(k) { let b = 0, bi = CI.other; for (let i = 0; i < k.votes.length; i++) if (k.votes[i] > b) { b = k.votes[i]; bi = i; } return bi; }
+function bestRaw(k) {
+  let b = 0, bi = null;
+  for (const i in k.rawVotes) if (k.rawVotes[i] > b) { b = k.rawVotes[i]; bi = i; }
+  return bi != null && S.classNames && S.classNames[bi] ? S.classNames[bi] : '';
+}
+function applyDet(k, d, t) {
+  const dt = t - k.t, ncx = d.x + d.w / 2, ncy = d.y + d.h / 2;
+  if (dt > 1e-4) {
+    const ivx = (ncx - k.cx) / dt, ivy = (ncy - k.cy) / dt;
+    if (k.hits < 2) { k.vx = ivx; k.vy = ivy; } else { k.vx = 0.5 * k.vx + 0.5 * ivx; k.vy = 0.5 * k.vy + 0.5 * ivy; }
+  }
+  k.cx = ncx; k.cy = ncy; k.w = 0.6 * d.w + 0.4 * k.w; k.h = 0.6 * d.h + 0.4 * k.h;
+  k.t = t; k.hits++; k.box = d; k.score = d.score;
+  k.votes[d.vote != null ? d.vote : d.cls] += d.score;
+  if (d.raw != null) k.rawVotes[d.raw] = (k.rawVotes[d.raw] || 0) + d.score;
+  k.trail.push(ncx, ncy); if (k.trail.length > 40) k.trail.splice(0, 2);
+}
+function lineGeom() {
+  const L = S.line, ax = L.ax * S.FW, ay = L.ay * S.FH, bx = L.bx * S.FW, by = L.by * S.FH;
+  return { ax, ay, bx, by, len: Math.hypot(bx - ax, by - ay) || 1 };
+}
+function checkCross(k, t, G) {
+  const d = ((k.cx - G.ax) * (G.by - G.ay) - (k.cy - G.ay) * (G.bx - G.ax)) / G.len;
+  const hys = Math.max(3, 0.12 * Math.min(k.w, k.h));
+  const s = d > hys ? 1 : d < -hys ? -1 : 0;
+  if (s !== 0) {
+    if (k.side !== 0 && s !== k.side && !k.counted) {
+      if (k.pending) k.pending = null;           // came back before being confirmed
+      else {
+        const f = k.sideD / (k.sideD - d);
+        const x = k.sideX + (k.cx - k.sideX) * f, y = k.sideY + (k.cy - k.sideY) * f;
+        const u = ((x - G.ax) * (G.bx - G.ax) + (y - G.ay) * (G.by - G.ay)) / (G.len * G.len);
+        if (u >= -0.03 && u <= 1.03) k.pending = { dir: s > 0 ? 'A' : 'B', x, y, t };
+      }
+    }
+    k.side = s; k.sideX = k.cx; k.sideY = k.cy; k.sideD = d;
+  }
+  // Count only a track that has been seen enough and has really moved since it was first seen:
+  // a box that only wobbles on the line is not a passing vehicle.
+  if (k.pending && !k.counted && k.hits >= P.minHits && Math.abs(d) >= P.far * Math.min(k.w, k.h) && Math.hypot(k.cx - k.bornX, k.cy - k.bornY) >= 0.5 * Math.min(k.w, k.h)) return commit(k, t);
+  return null;
+}
+function commit(k, t) {
+  const p = k.pending; k.pending = null; k.counted = true;
+  // A track that broke and re-formed on the line must not count the same vehicle twice.
+  for (let i = S.events.length - 1; i >= 0; i--) {
+    const e = S.events[i];
+    if (p.t - e.t > 2.5) break;
+    if (e.dir === p.dir && e.trackId !== k.id && k.bornNear && k.born >= e.t - 0.3 && !S.tracks.some((o) => o.id === e.trackId && t - o.t < 0.3)
+      && Math.hypot(e.x - p.x, e.y - p.y) < 0.5 * Math.min(k.w, k.h)) { k.event = e; return null; }
+  }
+  // One vehicle seen as two overlapping boxes (rider and load, cab and body) is one count.
+  for (const o of S.tracks) {
+    if (o !== k && o.counted && o.event && t - o.t < 0.3 && p.t - o.event.t < 3 && (iouBox(o.box, k.box, 0) > 0.45 || (bestCat(o) === bestCat(k) && coverBox(o.box, k.box) > 0.5))) { k.event = o.event; return null; }
+  }
+  const ev = { n: ++S.seq, t: p.t, x: p.x, y: p.y, dir: p.dir, cat: bestCat(k), auto: bestCat(k), raw: bestRaw(k), trackId: k.id, manual: false, removed: false, added: false, thumb: null };
+  k.event = ev; S.events.push(ev);
+  return ev;
+}
+// Some detectors add a loose, frame-filling box around vehicles they have already boxed properly.
+// Drop a very large, not-very-confident box that swallows another detection.
+function pruneGiants(dets) {
+  const area = S.FW * S.FH;
+  return dets.filter((g) => {
+    if (g.w * g.h < 0.2 * area || g.score >= 0.75) return true;
+    for (const d of dets) {
+      if (d === g || d.score < g.score - 0.15 || d.w * d.h >= 0.9 * g.w * g.h) continue;
+      const ix = Math.min(g.x + g.w, d.x + d.w) - Math.max(g.x, d.x), iy = Math.min(g.y + g.h, d.y + d.h) - Math.max(g.y, d.y);
+      if (ix > 0 && iy > 0 && ix * iy >= 0.7 * d.w * d.h) return false;
+    }
+    return true;
+  });
+}
+function trackStep(dets, t) {
+  dets = pruneGiants(dets);
+  const G = lineGeom();
+  const hi = dets.filter((d) => d.score >= P.conf), lo = dets.filter((d) => d.score < P.conf);
+  const a = greedy(S.tracks, hi, t, 0.1, true);
+  const b = greedy(a.ut.filter((k) => k.hits >= 2), lo, t, 0.4, false);
+  const matched = a.m.concat(b.m), fresh = [];
+  for (const [k, d] of matched) applyDet(k, d, t);
+  for (const d of a.ud) {
+    if (matched.some(([k]) => iouBox(k.box, d, 0) > 0.6)) continue;
+    const bx = d.x + d.w / 2, by = d.y + d.h / 2;
+    const bd = Math.abs((bx - G.ax) * (G.by - G.ay) - (by - G.ay) * (G.bx - G.ax)) / G.len;
+    const k = { id: S.nextTrack++, cx: bx, cy: by, w: d.w, h: d.h, vx: 0, vy: 0, t, born: t, bornX: bx, bornY: by, bornNear: bd < Math.min(d.w, d.h), hits: 0, votes: new Float32Array(CATS.length), rawVotes: {}, trail: [], side: 0, sideX: 0, sideY: 0, sideD: 0, counted: false, pending: null, event: null, box: d, score: d.score };
+    applyDet(k, d, t); S.tracks.push(k); matched.push([k, d]);
+  }
+  for (const [k] of matched) {
+    const ev = checkCross(k, t, G);
+    if (ev) fresh.push([ev, k]);
+    if (k.event && k.event.trackId === k.id) {
+      k.event.raw = bestRaw(k);
+      const c = bestCat(k);
+      if (k.event.auto !== c) { k.event.auto = c; if (!k.event.manual) { k.event.cat = c; S.dirty = true; } }
+    }
+  }
+  S.tracks = S.tracks.filter((k) => t - k.t <= (k.hits < 2 ? 0.35 : P.maxAge));
+  return fresh;
+}
+
+/* ---------- Auto-rickshaw colour rule ---------- */
+function yellowShare(d) {
+  pctx.drawImage(frame, d.x, d.y, d.w, d.h, 0, 0, 20, 20);
+  const px = pctx.getImageData(0, 0, 20, 20).data; let n = 0;
+  for (let i = 0; i < px.length; i += 4) {
+    const r = px[i], g = px[i + 1], b = px[i + 2], mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    if (mx < 120 || mx - mn < 0.35 * mx) continue;       // dark or washed out
+    if (r >= g * 0.85 && g >= r * 0.6 && b < 0.7 * g) n++;     // hue between amber and yellow
+  }
+  return n / 400;
+}
+function applyAutoRule(dets) {
+  if (!$('autoRule').checked || (S.engineKey !== 'accurate' && S.engineKey !== 'fast')) return;
+  for (const d of dets) {
+    if (d.cls !== CI.car && d.cls !== CI.truck && d.cls !== CI.bus) continue;
+    const ar = d.h / d.w;
+    if (ar < 0.6 || ar > 1.9) continue;
+    if (yellowShare(d) >= 0.09) d.vote = CI.auto;
+  }
+}
+
+/* ---------- Engine ---------- */
+function classMapFromNames(names) {
+  const rules = [
+    [/person|pedestrian|rider|animal|cow|dog/, -1],
+    [/cycle.?rick|cart|hand|animal.?drawn/, CI.other],
+    [/bicycle|^cycle$|pedal/, CI.cycle],
+    [/auto|three|3.?w|rickshaw|tuk|toto/, CI.auto],
+    [/two|2.?w|motor|bike|scoot|moped/, CI.two],
+    [/bus|travell?er/, CI.bus],
+    [/tractor/, CI.tractor],
+    [/lcv|tempo|pick.?up|mini.?truck|light/, CI.lcv],
+    [/truck|lorry|hcv|mav|axle|trailer|tanker|tipper|goods/, CI.truck],
+    [/car|hatch|sedan|suv|muv|van|jeep|taxi|cab/, CI.car],
+    [/vehicle|other/, CI.other]
+  ];
+  return names.map((n) => { const s = n.trim().toLowerCase(); for (const [re, c] of rules) if (re.test(s)) return c; return -1; });
+}
+function ensureEngine() {
+  const key = $('modelSel').value;
+  const sig = key === 'custom' ? 'custom:' + (S.custom ? S.custom.sig : '') : key;
+  if (S.engineReady && S.engineSig === sig) return Promise.resolve();
+  let model;
+  if (key === 'custom') {
+    if (!S.custom) return Promise.reject(new Error('Choose an India-trained .onnx model file in Detection settings first.'));
+    const names = $('customNames').value.split(',').map((s) => s.trim()).filter(Boolean);
+    if (!names.length) return Promise.reject(new Error('Enter the class names of the model, separated by commas.'));
+    const map = classMapFromNames(names);
+    if (!map.some((c) => c >= 0)) return Promise.reject(new Error('None of the class names look like vehicles. Check the list.'));
+    model = { name: S.custom.name, kind: S.custom.kind, size: parseInt($('customSize').value, 10), buffer: S.custom.buffer.slice(0), classMap: map, minScore: P.low };
+    S.classNames = names;
+  } else {
+    const names = MODELS[key].names;
+    model = Object.assign({}, MODELS[key], { classMap: names ? classMapFromNames(names) : COCO_MAP, minScore: P.low });
+    S.classNames = names || COCO_NAMES;
+  }
+  if (!worker) {
+    worker = new Worker('worker.js', { type: 'module' });
+    worker.onmessage = onWorker;
+    worker.onerror = (e) => { if (initReject) initReject(new Error('The detector could not start: ' + (e.message || 'worker error'))); };
+  }
+  S.engineReady = false; S.engineKey = key; S.modelName = model.name;
+  setChip('engineChip', 'busy', 'Loading detector');
+  $('loadMsg').hidden = false;
+  return new Promise((res, rej) => {
+    initResolve = () => { S.engineSig = sig; res(); }; initReject = rej;
+    worker.postMessage({ type: 'init', runtime: RUNTIME, model, backend: 'auto' }, model.buffer ? [model.buffer] : []);
+  }).finally(() => { $('loadMsg').hidden = true; });
+}
+function engineLabel() { return `${S.modelName} on ${S.backend === 'webgpu' ? 'graphics card' : 'processor'}`; }
+function onWorker(e) {
+  const m = e.data;
+  if (m.type === 'progress') {
+    const pct = m.total ? Math.round(100 * m.loaded / m.total) : 0;
+    $('loadText').textContent = m.label; $('loadBar').style.width = pct + '%'; $('loadPct').textContent = m.total > 1 ? pct + '%' : '';
+  } else if (m.type === 'ready') {
+    S.backend = m.backend; S.engineReady = true;
+    setChip('engineChip', 'ok', engineLabel());
+    if (m.note) toast(m.note);
+    if (initResolve) initResolve();
+  } else if (m.type === 'backend') {
+    S.backend = m.backend; setChip('engineChip', 'ok', engineLabel()); toast(m.note);
+  } else if (m.type === 'result') {
+    onResult(m);
+  } else if (m.type === 'error') {
+    if (m.stage === 'init') { setChip('engineChip', 'bad', 'Detector failed'); if (initReject) initReject(new Error(m.message)); }
+    else { S.busy = false; pauseRun(); warn('Analysis stopped: ' + m.message + ' Press Resume to try again.', 'crit'); }
+  }
+}
+
+/* ---------- Video sources: file, link, live capture ---------- */
+const CORS_MSG = 'That link could not be opened for analysis. The site must allow other pages to read its video. Download the file and choose it, or play the video in a tab and use Capture a tab or window.';
+let liveToken = 0;
+function stopSource() {
+  liveToken++;
+  if (S.stream) { for (const tr of S.stream.getTracks()) tr.stop(); S.stream = null; }
+  if (S.hls) { try { S.hls.destroy(); } catch (err) { /* ignore */ } S.hls = null; }
+  if (S.url && S.url.startsWith('blob:')) URL.revokeObjectURL(S.url);
+  video.srcObject = null; S.url = null; S.live = false; S.remote = false; S.checked = false;
+}
+function sourceFailed(msg) {
+  stopSource(); video.removeAttribute('src'); video.load();
+  S.phase = 'empty'; S.file = null; $('drop').hidden = false; $('fileName').textContent = '-';
+  if (!$('linkDlg').hidden) $('linkErr').textContent = msg; else warn(msg, 'crit');
+  ui();
+}
+function canRead() { try { fctx.getImageData(0, 0, 1, 1); return true; } catch (err) { return false; } }
+function loadFile(file) {
+  if (!file) return;
+  stopSource(); resetRun();
+  S.file = file; S.url = URL.createObjectURL(file); S.phase = 'empty';
+  warn('');
+  video.removeAttribute('crossorigin');
+  video.src = S.url; video.load();
+  $('fileName').textContent = file.name;
+}
+function youtubeId(u) {
+  try {
+    const x = new URL(u);
+    if (/(^|\.)youtube(-nocookie)?\.com$/.test(x.hostname)) return x.searchParams.get('v') || (x.pathname.match(/\/(?:live|embed|shorts)\/([\w-]{6,})/) || [])[1] || null;
+    if (x.hostname === 'youtu.be') return x.pathname.slice(1).split('/')[0] || null;
+  } catch (err) { /* not a link */ }
+  return null;
+}
+function loadScript(src) { return new Promise((res, rej) => { const el = document.createElement('script'); el.src = src; el.onload = res; el.onerror = () => rej(new Error('Could not load the streaming helper.')); document.head.appendChild(el); }); }
+async function loadUrl(raw) {
+  const url = String(raw || '').trim(), err = (m) => { $('linkErr').textContent = m; };
+  err(''); $('ytHelp').hidden = true;
+  let u; try { u = new URL(url); } catch (e) { return err('Enter a full link starting with https://'); }
+  if (!/^https?:$/.test(u.protocol)) return err('Enter a link starting with https://');
+  const yt = youtubeId(url), direct = /\.(mp4|m4v|webm|mov|ogv|m3u8)$/i.test(u.pathname);
+  if (yt || !direct) {
+    // A web page with a player: the picture can only be read from the screen.
+    $('ytLink').href = yt ? 'https://www.youtube.com/embed/' + encodeURIComponent(yt) + '?autoplay=1' : url;
+    $('ytHelp').hidden = false;
+    return;
+  }
+  stopSource(); resetRun(); warn('');
+  S.remote = true; S.url = url; S.phase = 'empty';
+  S.file = { name: (u.hostname + u.pathname).slice(0, 120) };
+  $('fileName').textContent = S.file.name;
+  video.setAttribute('crossorigin', 'anonymous');
+  try {
+    if (/\.m3u8$/i.test(u.pathname)) {
+      if (!window.Hls) await loadScript('https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js');
+      if (window.Hls && window.Hls.isSupported()) {
+        S.hls = new window.Hls();
+        S.hls.on(window.Hls.Events.ERROR, (ev, data) => { if (data.fatal && S.phase === 'empty') sourceFailed(CORS_MSG); });
+        S.hls.loadSource(url); S.hls.attachMedia(video);
+      } else { video.src = url; video.load(); }
+    } else { video.src = url; video.load(); }
+  } catch (e) { sourceFailed(e.message); }
+}
+async function captureScreen() {
+  const err = (m) => { $('linkErr').textContent = m; };
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) return err('This browser cannot capture a tab. Use Chrome or Edge on a computer.');
+  let stream;
+  try {
+    const opts = { video: { frameRate: { ideal: 30 } }, audio: false };
+    let ctl = null;
+    if (window.CaptureController) { ctl = new window.CaptureController(); opts.controller = ctl; }
+    stream = await navigator.mediaDevices.getDisplayMedia(opts);
+    try { if (ctl && ctl.setFocusBehavior) ctl.setFocusBehavior('no-focus-change'); } catch (e) { /* older browsers */ }
+  } catch (e) { return err(e && e.name === 'NotAllowedError' ? 'Capture was cancelled or not allowed.' : 'Capture could not start: ' + (e.message || e.name)); }
+  const label = $('linkUrl').value.trim();
+  useStream(stream, 'Live capture' + (label ? ': ' + label.slice(0, 100) : ''));
+}
+function useStream(stream, label) {
+  stopSource(); resetRun(); warn('');
+  S.live = true; S.stream = stream; S.phase = 'empty'; S.file = { name: label };
+  $('fileName').textContent = label;
+  const tr = stream.getVideoTracks()[0];
+  if (tr) tr.addEventListener('ended', () => { if (S.stream !== stream) return; if (S.phase === 'running' || S.phase === 'paused') { stopLive(); toast('The live source ended. Counting has stopped.'); } else if (S.phase === 'ready') sourceFailed('The live source was closed.'); });
+  video.removeAttribute('crossorigin'); video.removeAttribute('src');
+  video.srcObject = stream;
+  const p = video.play(); if (p && p.catch) p.catch(() => {});
+}
+function sizeFrame() {
+  const sc = Math.min(1, 1280 / Math.max(video.videoWidth, video.videoHeight));
+  S.FW = Math.round(video.videoWidth * sc); S.FH = Math.round(video.videoHeight * sc);
+  frame.width = view.width = S.FW; frame.height = view.height = S.FH;
+  $('stage').style.aspectRatio = S.FW + ' / ' + S.FH;
+}
+// Live sources cannot be paused or rewound: analyse the newest frame whenever the detector is free.
+function liveLoop() {
+  const tok = ++liveToken;
+  const tick = () => {
+    if (tok !== liveToken || !S.live) return;
+    if (video.readyState >= 2 && video.videoWidth) {
+      if (S.phase === 'ready') {
+        fctx.drawImage(video, 0, 0, S.FW, S.FH);
+        if (S.remote && !S.checked) { S.checked = true; if (!canRead()) { sourceFailed(CORS_MSG); return; } }
+        render();
+      } else if (S.phase === 'running' && !S.busy) {
+        const t = (performance.now() - S.liveT0) / 1000;
+        if (t - S.lastSampleT >= 0.9 * step()) capture(t);
+      }
+    }
+    if (hasRVFC) video.requestVideoFrameCallback(tick); else setTimeout(tick, 50);
+  };
+  tick();
+}
+video.addEventListener('loadedmetadata', () => {
+  if (S.phase !== 'empty') return;
+  if (!video.videoWidth) { sourceFailed('This source has no video picture this browser can read. Convert it to MP4 (H.264) and try again.'); return; }
+  sizeFrame();
+  if (!S.live && !isFinite(video.duration)) S.live = true;     // a live stream opened from a link
+  S.dur = !S.live && isFinite(video.duration) ? video.duration : 0;
+  $('tDur').textContent = S.live ? 'live' : fmtT(S.dur);
+  S.phase = 'ready'; $('drop').hidden = true; $('linkDlg').hidden = true;
+  if (S.live) { const p = video.play(); if (p && p.catch) p.catch(() => {}); liveLoop(); }
+  else {
+    const show = () => {
+      video.removeEventListener('seeked', show);
+      if (S.phase !== 'ready') return;
+      fctx.drawImage(video, 0, 0, S.FW, S.FH);
+      if (S.remote && !canRead()) { sourceFailed(CORS_MSG); return; }
+      render();
+    };
+    video.addEventListener('seeked', show);
+    try { video.currentTime = Math.min(0.05, S.dur / 2 || 0); } catch (err) { /* ignore */ }
+  }
+  ui();
+});
+video.addEventListener('resize', () => { if (S.live && S.phase === 'ready' && video.videoWidth) sizeFrame(); });
+video.addEventListener('error', () => {
+  if (!S.url || S.hls) return;
+  if (S.remote) { sourceFailed(CORS_MSG); return; }
+  sourceFailed('This browser cannot play that file. Convert it to MP4 (H.264 video) and choose it again. AVI and some phone or CCTV formats are not supported by browsers.');
+});
+video.addEventListener('ended', () => { if (S.phase === 'running' && !S.busy) finish(); });
+
+function resetRun() {
+  S.tracks = []; S.nextTrack = 1; S.events = []; S.seq = 0; S.edits = 0;
+  S.t = 0; S.nextT = 0; S.lastSampleT = -1; S.samples = 0; S.busy = false; S.flashUntil = -1; S.lastDets = [];
+  S.wallAccum = 0; S.wallStart = 0; S.inferMs = 0; S.runId = null; S.showAll = false; S.dirty = true; S.autoPaused = false;
+  $('strip').innerHTML = ''; stripRendered = 0;
+}
+const step = () => 1 / parseInt($('rateSel').value, 10);
+
+async function startRun() {
+  if (S.phase !== 'ready' && S.phase !== 'done' && S.phase !== 'paused') return;
+  P.conf = parseFloat($('confSel').value);
+  const prev = S.phase; S.phase = 'loading'; ui();
+  try { await ensureEngine(); } catch (err) { S.phase = prev; ui(); warn(err.message, 'crit'); return; }
+  warn('');
+  resetRun();
+  S.runId = (crypto.randomUUID ? crypto.randomUUID() : 'run-' + Date.now() + '-' + Math.random().toString(16).slice(2));
+  S.runStarted = new Date().toISOString();
+  S.phase = 'running'; S.wallStart = performance.now(); S.liveT0 = performance.now(); S.missed = 0;
+  video.muted = true;
+  if (!S.live) { try { video.currentTime = 0; } catch (err) { /* ignore */ } }
+  ui(); syncRun('started');
+  pump();
+}
+// Playback only has to keep the detector fed: slow detector, slow and precise playback; fast detector, faster playback.
+function playRate() { return Math.max(1, Math.min(4, step() * 1000 / (0.6 * (S.inferMs || 60)))); }
+function pump() {
+  if (S.phase !== 'running' || S.busy || S.live) return;
+  if (video.ended) { finish(); return; }
+  if (hasRVFC) {
+    video.playbackRate = playRate();
+    video.requestVideoFrameCallback(onVideoFrame);
+    const p = video.play(); if (p && p.catch) p.catch(() => {});
+  } else {
+    const target = Math.max(S.nextT, 0);
+    if (S.dur && target >= S.dur) { finish(); return; }
+    const done = () => { video.removeEventListener('seeked', done); if (S.phase === 'running') capture(video.currentTime); };
+    video.addEventListener('seeked', done);
+    video.currentTime = target;
+  }
+}
+function onVideoFrame(now, meta) {
+  if (S.phase !== 'running' || S.busy) return;
+  const t = meta.mediaTime;
+  if (t > S.lastSampleT + 1e-4 && t + 1e-4 >= S.nextT) { video.pause(); capture(t); }
+  else video.requestVideoFrameCallback(onVideoFrame);
+}
+function capture(t) {
+  S.busy = true;
+  fctx.drawImage(video, 0, 0, S.FW, S.FH);
+  createImageBitmap(frame).then((bmp) => {
+    worker.postMessage({ type: 'frame', id: ++S.frameId, t, bitmap: bmp }, [bmp]);
+  }).catch((err) => { S.busy = false; pauseRun(); warn('Could not read a video frame: ' + err.message, 'crit'); });
+}
+function onResult(m) {
+  if (m.id !== S.frameId || (S.phase !== 'running' && S.phase !== 'paused')) { S.busy = false; return; }
+  const t = m.t;
+  applyAutoRule(m.dets);
+  if (window.__arcRec) window.__arcRec.push({ t, dets: m.dets.map((d) => Object.assign({}, d)) });
+  const fresh = trackStep(m.dets, t);
+  for (const [ev, k] of fresh) { ev.thumb = thumb(k.box); S.flashUntil = t + 0.25; S.dirty = true; }
+  S.lastDets = m.dets;
+  S.inferMs = S.inferMs ? 0.8 * S.inferMs + 0.2 * m.ms : m.ms;
+  if (S.samples === 12 && S.backend === 'wasm' && S.engineKey !== 'fast' && S.engineKey !== 'custom' && S.inferMs > 250) warn('No graphics acceleration was found, so this detector is slow on this computer. Let it run, or restart with Detector set to General, fast in Detection settings (quicker, but without Indian classes).', 'info');
+  S.lastSampleT = t; S.t = t; S.samples++;
+  S.nextT = Math.max(S.nextT + step(), t + 0.5 * step());
+  S.busy = false;
+  render(); refresh();
+  if (S.live && S.samples === 60 && S.samples / t < 5) warn(`This computer analyses only ${(S.samples / t).toFixed(1)} frames a second on live video, so fast vehicles may be missed. Stop, set Detector to General, fast in Detection settings, and start again.`);
+  if (S.phase === 'running' && !S.live) { if (video.ended || (S.dur && t >= S.dur - 0.02)) finish(); else pump(); }
+}
+function pauseRun() {
+  if (S.phase !== 'running') return;
+  S.phase = 'paused'; S.wallAccum += performance.now() - S.wallStart; if (!S.live) video.pause(); ui();
+}
+function resumeRun() {
+  if (S.phase !== 'paused') return;
+  S.phase = 'running'; S.wallStart = performance.now(); S.autoPaused = false; warn(''); ui(); pump();
+}
+function finish() {
+  if (S.phase !== 'running') return;
+  S.wallAccum += performance.now() - S.wallStart; S.phase = 'done'; if (!S.live) video.pause();
+  if (S.dur) S.t = Math.max(S.t, S.dur);
+  S.tracks = []; S.lastDets = []; S.dirty = true;
+  render(); refresh(true); ui(); syncRun('completed');
+  toast(`Analysis complete: ${liveEvents().length} vehicles counted.`);
+}
+function stopLive() { if (S.phase === 'paused') { S.phase = 'running'; S.wallStart = performance.now(); } finish(); }
+document.addEventListener('visibilitychange', () => {
+  if (S.live) {
+    // A live source keeps moving while this tab is hidden, and browsers stop handing over frames.
+    if (document.hidden && S.phase === 'running') S.hiddenAt = performance.now();
+    else if (!document.hidden && S.hiddenAt) { S.missed += (performance.now() - S.hiddenAt) / 1000; S.hiddenAt = 0; if (S.missed >= 1) warn(`This tab was hidden for ${Math.round(S.missed)} s during live counting. Vehicles that passed in that time were not counted. Keep this tab visible, with the video in a separate window.`); }
+    return;
+  }
+  if (document.hidden && S.phase === 'running') { pauseRun(); S.autoPaused = true; warn('Analysis paused because this tab was hidden. Browsers stop video in background tabs, so keep this tab in front.'); }
+  else if (!document.hidden && S.phase === 'paused' && S.autoPaused) resumeRun();
+});
+
+/* ---------- Drawing ---------- */
+function thumb(b) {
+  const pad = 0.12, x = Math.max(0, b.x - b.w * pad), y = Math.max(0, b.y - b.h * pad);
+  const w = Math.min(S.FW - x, b.w * (1 + 2 * pad)), h = Math.min(S.FH - y, b.h * (1 + 2 * pad));
+  const sc = Math.min(1, 168 / Math.max(w, h));
+  thumbC.width = Math.max(8, Math.round(w * sc)); thumbC.height = Math.max(8, Math.round(h * sc));
+  tctx.drawImage(frame, x, y, w, h, 0, 0, thumbC.width, thumbC.height);
+  return thumbC.toDataURL('image/jpeg', 0.72);
+}
+function render() {
+  const W = S.FW, H = S.FH, u = Math.max(1, W / 640);
+  vctx.drawImage(frame, 0, 0);
+  if ($('showBoxes').checked && (S.phase === 'running' || S.phase === 'paused')) {
+    vctx.font = `700 ${Math.round(11 * u)}px Overpass, Arial, sans-serif`; vctx.textBaseline = 'bottom';
+    for (const k of S.tracks) {
+      if (k.t !== S.t || k.hits < 2) continue;
+      const c = CATS[bestCat(k)], b = k.box;
+      vctx.lineWidth = 2 * u; vctx.strokeStyle = c.color; vctx.strokeRect(b.x, b.y, b.w, b.h);
+      const lab = c.label.split(' /')[0] + (k.counted ? ' ✓' : '');
+      const tw = vctx.measureText(lab).width + 8 * u, th = 14 * u, ly = Math.max(th, b.y);
+      vctx.fillStyle = c.color; vctx.fillRect(b.x - u, ly - th, tw, th);
+      vctx.fillStyle = '#fff'; vctx.fillText(lab, b.x + 3 * u, ly - 1 * u);
+    }
+  }
+  if (S.phase !== 'empty') drawLine(u);
+}
+function drawLine(u) {
+  const G = lineGeom(), flash = S.t <= S.flashUntil;
+  vctx.lineCap = 'round';
+  vctx.strokeStyle = 'rgba(0,0,0,.75)'; vctx.lineWidth = 6 * u; vctx.beginPath(); vctx.moveTo(G.ax, G.ay); vctx.lineTo(G.bx, G.by); vctx.stroke();
+  vctx.strokeStyle = flash ? '#ffffff' : '#f6c20a'; vctx.lineWidth = 3.2 * u; vctx.beginPath(); vctx.moveTo(G.ax, G.ay); vctx.lineTo(G.bx, G.by); vctx.stroke();
+  const nx = (G.by - G.ay) / G.len, ny = -(G.bx - G.ax) / G.len, mx = (G.ax + G.bx) / 2, my = (G.ay + G.by) / 2;
+  const arrow = (sx, sy, dx, dy, lab) => {
+    const L = 26 * u, ex = sx + dx * L, ey = sy + dy * L;
+    vctx.strokeStyle = '#000'; vctx.lineWidth = 5 * u; vctx.beginPath(); vctx.moveTo(sx, sy); vctx.lineTo(ex, ey); vctx.stroke();
+    vctx.strokeStyle = '#fff'; vctx.lineWidth = 2.4 * u; vctx.beginPath(); vctx.moveTo(sx, sy); vctx.lineTo(ex, ey); vctx.stroke();
+    vctx.fillStyle = '#fff'; vctx.strokeStyle = '#000'; vctx.lineWidth = 1.5 * u;
+    vctx.beginPath(); vctx.moveTo(ex + dx * 9 * u, ey + dy * 9 * u); vctx.lineTo(ex - dy * 6 * u, ey + dx * 6 * u); vctx.lineTo(ex + dy * 6 * u, ey - dx * 6 * u); vctx.closePath(); vctx.fill(); vctx.stroke();
+    const bx = ex + dx * 22 * u, by = ey + dy * 22 * u, r = 9 * u;
+    vctx.fillStyle = '#0f1f18'; vctx.beginPath(); vctx.arc(bx, by, r, 0, 6.3); vctx.fill();
+    vctx.fillStyle = '#fff'; vctx.font = `900 ${Math.round(11 * u)}px Overpass, Arial, sans-serif`; vctx.textAlign = 'center'; vctx.textBaseline = 'middle'; vctx.fillText(lab, bx, by + 0.5 * u); vctx.textAlign = 'left';
+  };
+  const off = 34 * u, tx = (G.bx - G.ax) / G.len, ty = (G.by - G.ay) / G.len;
+  arrow(mx - tx * off, my - ty * off, nx, ny, 'A');
+  arrow(mx + tx * off, my + ty * off, -nx, -ny, 'B');
+  if (S.phase === 'ready' || S.phase === 'done') {
+    for (const [x, y] of [[G.ax, G.ay], [G.bx, G.by]]) {
+      vctx.fillStyle = '#f6c20a'; vctx.strokeStyle = '#000'; vctx.lineWidth = 2 * u;
+      vctx.beginPath(); vctx.arc(x, y, 9 * u, 0, 6.3); vctx.fill(); vctx.stroke();
+    }
+  }
+}
+let drag = null;
+function ptr(e) { const r = view.getBoundingClientRect(); return { x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) }; }
+view.addEventListener('pointerdown', (e) => {
+  if (S.phase !== 'ready') { if (S.phase === 'done' || S.phase === 'paused' || S.phase === 'running') toast('The counting line is fixed during a run. Use Restart to move it.'); return; }
+  const p = ptr(e), L = S.line, r = view.getBoundingClientRect();
+  const da = Math.hypot((p.x - L.ax) * r.width, (p.y - L.ay) * r.height), db = Math.hypot((p.x - L.bx) * r.width, (p.y - L.by) * r.height);
+  drag = da <= db ? 'a' : 'b';
+  if (Math.min(da, db) > 60) { drag = null; return; }
+  view.setPointerCapture(e.pointerId); e.preventDefault();
+});
+view.addEventListener('pointermove', (e) => { if (!drag) return; const p = ptr(e); S.line[drag + 'x'] = p.x; S.line[drag + 'y'] = p.y; render(); });
+view.addEventListener('pointerup', () => { drag = null; });
+view.addEventListener('pointercancel', () => { drag = null; });
+
+/* ---------- Dashboard ---------- */
+const liveEvents = () => S.events.filter((e) => !e.removed);
+function tally() {
+  const n = CATS.map(() => ({ t: 0, A: 0, B: 0 })); let A = 0, B = 0;
+  for (const e of S.events) { if (e.removed) continue; n[e.cat].t++; n[e.cat][e.dir]++; if (e.dir === 'A') A++; else B++; }
+  return { n, A, B, total: A + B };
+}
+function buildStatic() {
+  $('tiles').innerHTML = CATS.map((c, i) => `<div class="card tile" style="--c:${c.color}" id="tile${i}">
+    <span class="name">${esc(c.label)}</span><svg class="ico" width="40" height="23" viewBox="0 0 48 28" fill="currentColor" aria-hidden="true">${c.icon}</svg>
+    <span class="sub">${esc(c.sub)}</span><span class="v" id="tv${i}">0</span><span class="share" id="ts${i}">0%</span>
+    <button class="add" type="button" data-add="${i}" title="Add one ${esc(c.label)} by hand" aria-label="Add one ${esc(c.label)} by hand">+</button></div>`).join('');
+  $('legend').innerHTML = CATS.map((c) => `<span style="--c:${c.color}"><i></i>${esc(c.label)}</span>`).join('');
+  $('tbl').tBodies[0].innerHTML = CATS.map((c, i) => `<tr><td><span class="sw" style="--c:${c.color}"></span>${esc(c.label)}</td><td class="num" id="r${i}t">0</td><td class="num" id="r${i}s">0.0%</td><td class="num" id="r${i}a">0</td><td class="num" id="r${i}b">0</td></tr>`).join('');
+  $('auditFilter').innerHTML = '<option value="all">All classes</option>' + CATS.map((c, i) => `<option value="${i}">${esc(c.label)}</option>`).join('') + '<option value="edited">Edited by hand</option><option value="removed">Removed</option>';
+  $('evOpts').innerHTML = CATS.map((c, i) => `<button class="opt" type="button" style="--c:${c.color}" data-cat="${i}" aria-pressed="false">${esc(c.label)}</button>`).join('');
+}
+let lastChart = 0, stripRendered = 0;
+function refresh(force) {
+  const T = tally(), tot = T.total;
+  $('total').textContent = tot.toLocaleString('en-IN');
+  $('dirAV').textContent = T.A.toLocaleString('en-IN'); $('dirBV').textContent = T.B.toLocaleString('en-IN');
+  CATS.forEach((c, i) => {
+    const v = T.n[i].t, sh = tot ? 100 * v / tot : 0;
+    $('tv' + i).textContent = v.toLocaleString('en-IN'); $('ts' + i).textContent = sh.toFixed(sh >= 10 || !sh ? 0 : 1) + '%';
+    $('r' + i + 't').textContent = v; $('r' + i + 's').textContent = sh.toFixed(1) + '%'; $('r' + i + 'a').textContent = T.n[i].A; $('r' + i + 'b').textContent = T.n[i].B;
+    $('tile' + i).classList.toggle('off', !v);
+  });
+  $('ftT').textContent = tot; $('ftA').textContent = T.A; $('ftB').textContent = T.B;
+  const an = Math.min(S.t, S.dur || S.t);
+  $('analysed').textContent = fmtT(an) + (S.dur ? ' of ' + fmtT(S.dur) : S.live ? ' live' : '');
+  $('flow').textContent = an >= 5 ? Math.round(tot / an * 3600).toLocaleString('en-IN') : '-';
+  $('inView').textContent = S.tracks.filter((k) => k.t === S.t && k.hits >= 2).length;
+  $('fpsReal').textContent = S.samples > 5 && S.t > 0 ? (S.samples / S.t).toFixed(1) + ' per second' : '-';
+  $('edits').textContent = S.edits;
+  $('tNow').textContent = fmtT(S.t);
+  $('progBar').style.width = (S.dur ? Math.min(100, 100 * S.t / S.dur) : S.live && S.runId ? 100 : 0) + '%';
+  const wall = (S.wallAccum + (S.phase === 'running' ? performance.now() - S.wallStart : 0)) / 1000;
+  $('speed').textContent = S.live ? 'real time' : wall > 1 && S.t > 0 ? (S.t / wall).toFixed(2) + '×' : '-';
+  $('totalSub').textContent = S.phase === 'done' ? `Final count for ${fmtT(S.dur || S.t)} of ${S.live ? 'live video' : 'video'}` : S.phase === 'running' ? 'Counting now' : S.phase === 'paused' ? 'Paused' : S.runId ? '' : 'No video analysed yet';
+  const now = performance.now();
+  if (force || S.dirty && now - lastChart > 600) { lastChart = now; S.dirty = false; drawChart(); drawStrip(); }
+}
+function binSize() { const d = Math.max(S.dur || 0, S.t, 10); for (const b of [5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600]) if (d / b <= 36) return b; return 3600; }
+let chartBins = [];
+function drawChart() {
+  const svg = $('chart'), W = 760, H = 300, m = { l: 48, r: 26, t: 12, b: 44 };
+  const bs = binSize(), d = Math.max(S.dur || 0, S.t, bs), nb = Math.max(1, Math.ceil(d / bs - 1e-9));
+  const bins = Array.from({ length: nb }, () => new Array(CATS.length).fill(0));
+  for (const e of S.events) if (!e.removed) bins[Math.min(nb - 1, Math.floor(e.t / bs))][e.cat]++;
+  chartBins = bins.map((b, i) => ({ from: i * bs, to: Math.min(d, (i + 1) * bs), v: b, total: b.reduce((a, c) => a + c, 0) }));
+  const mx = Math.max(4, ...chartBins.map((b) => b.total));
+  const stepY = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 5000].find((s) => mx / s <= 5) || 10000;
+  const top = Math.ceil(mx / stepY) * stepY, pw = W - m.l - m.r, ph = H - m.t - m.b, bw = pw / nb, gap = Math.min(4, bw * 0.18);
+  const y = (v) => m.t + ph - ph * v / top;
+  let s = '';
+  for (let v = 0; v <= top; v += stepY) s += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="${v ? '#d9d9d9' : '#000'}" stroke-width="1"/><text x="${m.l - 7}" y="${y(v) + 4.5}" text-anchor="end" font-size="14" fill="#000">${v}</text>`;
+  chartBins.forEach((b, i) => {
+    let acc = 0; const x = m.l + i * bw + gap / 2, w = Math.max(1, bw - gap);
+    b.v.forEach((v, ci) => { if (!v) return; const y1 = y(acc + v), hh = y(acc) - y1; acc += v; s += `<rect x="${x.toFixed(1)}" y="${(y1 + (hh > 3 ? 1 : 0)).toFixed(1)}" width="${w.toFixed(1)}" height="${Math.max(1, hh - (hh > 3 ? 1 : 0)).toFixed(1)}" fill="${CATS[ci].color}"/>`; });
+    s += `<rect data-bin="${i}" x="${(m.l + i * bw).toFixed(1)}" y="${m.t}" width="${bw.toFixed(1)}" height="${ph}" fill="transparent"/>`;
+  });
+  const every = Math.ceil(nb / 9);
+  for (let i = 0; i <= nb; i += every) s += `<text x="${(m.l + i * bw).toFixed(1)}" y="${H - m.b + 18}" text-anchor="middle" font-size="14" fill="#000">${fmtT(i * bs)}</text>`;
+  s += `<text x="${m.l + pw / 2}" y="${H - 6}" text-anchor="middle" font-size="15" fill="#000">Video time (interval ${bs >= 60 ? bs / 60 + ' min' : bs + ' s'})</text>`;
+  s += `<text transform="translate(14 ${m.t + ph / 2}) rotate(-90)" text-anchor="middle" font-size="15" fill="#000">Vehicles</text>`;
+  svg.innerHTML = s;
+  $('binHint').textContent = `Count per ${bs >= 60 ? bs / 60 + '-minute' : bs + '-second'} interval, stacked by class`;
+}
+$('chart').addEventListener('pointermove', (e) => {
+  const el = e.target.closest('[data-bin]'), tip = $('tip');
+  if (!el) { tip.hidden = true; return; }
+  const b = chartBins[+el.dataset.bin]; if (!b) return;
+  tip.innerHTML = `<b>${fmtT(b.from)} to ${fmtT(b.to)}</b><br>Total: ${b.total}` + b.v.map((v, i) => v ? `<br>${esc(CATS[i].label)}: ${v}` : '').join('');
+  tip.hidden = false;
+  const r = $('chartWrap').getBoundingClientRect(); let x = e.clientX - r.left + 14; if (x + tip.offsetWidth > r.width) x = e.clientX - r.left - tip.offsetWidth - 14;
+  tip.style.left = Math.max(0, x) + 'px'; tip.style.top = Math.max(0, e.clientY - r.top - 10) + 'px';
+});
+$('chart').addEventListener('pointerleave', () => { $('tip').hidden = true; });
+
+function drawStrip() {
+  const f = $('auditFilter').value;
+  let list = S.events.filter((e) => f === 'all' ? true : f === 'removed' ? e.removed : f === 'edited' ? (e.manual || e.added) && !e.removed : !e.removed && e.cat === +f);
+  const totalN = list.length; list = list.slice().reverse();
+  const cap = S.showAll ? 2000 : 60;
+  $('moreBtn').hidden = S.showAll || totalN <= cap;
+  $('auditCount').textContent = totalN ? `${Math.min(cap, totalN)} of ${totalN} shown, newest first` : '';
+  $('stripEmpty').hidden = totalN > 0;
+  $('strip').innerHTML = list.slice(0, cap).map((e) => { const c = CATS[e.cat];
+    return `<button class="ev${e.removed ? ' removed' : ''}${e.manual || e.added ? ' edited' : ''}" type="button" data-ev="${e.n}" style="--c:${c.color}"><span class="ph"${e.thumb ? ` style="background-image:url(${e.thumb})"` : ''}>${e.thumb ? '' : 'added by hand'}</span><span class="cap"><b>${esc(c.label)}</b><span>#${e.n} · ${fmtT(e.t)} · ${e.dir}</span></span></button>`; }).join('');
+}
+let curEv = null;
+function openEvent(n) {
+  const e = S.events.find((x) => x.n === n); if (!e) return; curEv = e;
+  $('evTitle').textContent = `Vehicle #${e.n}`;
+  $('evImg').hidden = !e.thumb; if (e.thumb) $('evImg').src = e.thumb;
+  $('evInfo').textContent = `Counted at ${fmtT(e.t)}, direction ${e.dir}. ${e.added ? 'Added by hand.' : 'Detector class: ' + (e.raw || CATS[e.auto].label) + '.'} Choose the correct class.`;
+  for (const b of $('evOpts').children) b.setAttribute('aria-pressed', String(+b.dataset.cat === e.cat && !e.removed));
+  $('evRemove').textContent = e.removed ? 'Restore this count' : 'Not a vehicle, remove';
+  $('evDlg').hidden = false; $('evClose').focus();
+}
+function edited() { S.edits++; S.dirty = true; refresh(true); if (S.phase === 'done') scheduleSync('corrected'); }
+$('evOpts').addEventListener('click', (e) => { const b = e.target.closest('[data-cat]'); if (!b || !curEv) return; curEv.cat = +b.dataset.cat; curEv.manual = true; curEv.removed = false; edited(); openEvent(curEv.n); });
+$('evRemove').addEventListener('click', () => { if (!curEv) return; curEv.removed = !curEv.removed; curEv.manual = true; edited(); $('evDlg').hidden = true; });
+$('evClose').addEventListener('click', () => { $('evDlg').hidden = true; });
+$('evDlg').addEventListener('click', (e) => { if (e.target === $('evDlg')) $('evDlg').hidden = true; });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { $('evDlg').hidden = true; $('linkDlg').hidden = true; } });
+$('strip').addEventListener('click', (e) => { const b = e.target.closest('[data-ev]'); if (b) openEvent(+b.dataset.ev); });
+$('auditFilter').addEventListener('change', drawStrip);
+$('moreBtn').addEventListener('click', () => { S.showAll = true; drawStrip(); });
+$('tiles').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-add]'); if (!b) return;
+  if (!S.runId) { toast('Start an analysis first. Hand-added vehicles are stored with the run.'); return; }
+  const cat = +b.dataset.add;
+  S.events.push({ n: ++S.seq, t: S.t, x: 0, y: 0, dir: 'A', cat, auto: cat, raw: '', trackId: 0, manual: true, removed: false, added: true, thumb: null });
+  edited(); toast(`Added one ${CATS[cat].label} at ${fmtT(S.t)}. Open it in Counted vehicles to remove it.`);
+});
+
+/* ---------- Export ---------- */
+function csvCell(v) { v = String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
+function buildCsv(sep) {
+  const T = tally(), bs = binSize(), rows = [], add = (...c) => rows.push(c.map(csvCell).join(sep));
+  const dA = $('dirA').value || 'Direction A', dB = $('dirB').value || 'Direction B';
+  add('ARC Vehicle Monitoring - classified traffic volume count');
+  add('Video file', S.file ? S.file.name : ''); add('Video length (s)', (S.dur || 0).toFixed(1)); add('Analysed (s)', Math.min(S.t, S.dur || S.t).toFixed(1));
+  add('Status', S.phase === 'done' ? 'Completed' : 'Partial'); add('Detector', S.modelName ? engineLabel() : '');
+  if (S.user) add('Operator', S.user.name, S.user.email);
+  add('Generated', new Date().toLocaleString('en-IN')); add('Manual corrections', S.edits); add('');
+  add('Class', 'Count', 'Share %', dA, dB);
+  CATS.forEach((c, i) => add(c.label, T.n[i].t, T.total ? (100 * T.n[i].t / T.total).toFixed(1) : '0.0', T.n[i].A, T.n[i].B));
+  add('Total', T.total, '100.0', T.A, T.B); add('');
+  add('Interval start', 'Interval end', ...CATS.map((c) => c.label), 'Total');
+  for (const b of chartBins) add(fmtT(b.from), fmtT(b.to), ...b.v, b.total);
+  const sub = {};
+  for (const e of S.events) if (!e.removed && !e.added && e.raw) { const k = e.raw + '|' + CATS[e.cat].label; sub[k] = (sub[k] || 0) + 1; }
+  if (Object.keys(sub).length) {
+    add(''); add('Detector sub-class', 'Counted as', 'Count');
+    for (const k of Object.keys(sub).sort()) add(...k.split('|'), sub[k]);
+  }
+  add(''); add('No.', 'Video time (s)', 'Class', 'Direction', 'Detector sub-class', 'Source');
+  for (const e of S.events) if (!e.removed) add(e.n, e.t.toFixed(2), CATS[e.cat].label, e.dir === 'A' ? dA : dB, e.raw || '', e.added ? 'added by hand' : e.manual ? 'class corrected by hand' : 'automatic');
+  return rows.join('\n');
+}
+async function downloadCsv() {
+  drawChart();
+  const name = 'ARC-count-' + (S.file ? S.file.name.replace(/\.[^.]+$/, '').replace(/[^\w-]+/g, '_').slice(0, 40) : 'run') + '.csv';
+  const data = '﻿' + buildCsv(',');
+  try {
+    const dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null;
+    if (dl) { await dl.save({ filename: name, data }); return; }
+  } catch (err) { if (err && err.code === 'declined') return; }
+  try {
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([data], { type: 'text/csv' })); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  } catch (err) { toast('Download is not available here. Use Copy table and paste into a spreadsheet.'); }
+}
+$('csvBtn').addEventListener('click', downloadCsv);
+$('copyBtn').addEventListener('click', async () => {
+  drawChart();
+  try { await navigator.clipboard.writeText(buildCsv('\t')); toast('Table copied. Paste it into Excel or Google Sheets.'); }
+  catch (err) { toast('Copying was blocked by the browser. Use Download CSV instead.'); }
+});
+
+/* ---------- Sign-in and Google Drive logging ---------- */
+async function api(action, data) {
+  const res = await fetch(ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ action }, data)), redirect: 'follow' });
+  let j; try { j = await res.json(); } catch (err) { throw new Error('The log service did not answer correctly. Check the Apps Script deployment.'); }
+  if (!j.ok) { const er = new Error(j.error || 'Request failed'); er.code = j.code; throw er; }
+  return j;
+}
+function loadSession() { try { const s = JSON.parse(localStorage.getItem('arc.session') || 'null'); if (s && s.token && s.exp > Date.now()) return s; } catch (err) { /* ignore */ } return null; }
+function saveSession(s) { S.user = s; try { if (s) localStorage.setItem('arc.session', JSON.stringify(s)); else localStorage.removeItem('arc.session'); } catch (err) { /* ignore */ } showUser(); }
+function showUser() {
+  $('userChip').hidden = !S.user; if (S.user) $('userText').textContent = S.user.name;
+  $('signin').hidden = PREVIEW || !!S.user;
+  if (PREVIEW) setChip('syncChip', '', 'Preview mode, not logged'); else if (S.user) setChip('syncChip', 'ok', 'Drive log connected'); else setChip('syncChip', '', 'Not signed in');
+}
+let signStage = 1;
+function setSignStage(n) { signStage = n; $('step1').hidden = n !== 1; $('step2').hidden = n !== 2; $('signBtn').textContent = n === 1 ? 'Send code' : 'Verify and continue'; $('signErr').textContent = ''; if (n === 2) $('inCode').focus(); }
+$('backBtn').addEventListener('click', () => setSignStage(1));
+$('signForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = $('inName').value.trim(), email = $('inEmail').value.trim().toLowerCase(), mobile = $('inMobile').value.replace(/[\s-]/g, '');
+  const err = (m) => { $('signErr').textContent = m; };
+  if (name.length < 3) return err('Enter your full name.');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return err('Enter a valid email address.');
+  if (!/^(\+?91)?[6-9]\d{9}$/.test(mobile)) return err('Enter a valid 10-digit Indian mobile number.');
+  $('signBtn').disabled = true; err('');
+  try {
+    if (signStage === 1) {
+      const r = await api('otp', { name, email, mobile });
+      if (r.token) saveSession({ token: r.token, exp: r.exp, name, email, mobile }); else { setSignStage(2); $('signLead').textContent = `A 6-digit code was sent to ${email}. It is valid for 10 minutes. Check the spam folder too.`; }
+    } else {
+      const code = $('inCode').value.trim();
+      if (!/^\d{6}$/.test(code)) { err('Enter the 6-digit code.'); return; }
+      const r = await api('verify', { name, email, mobile, code });
+      saveSession({ token: r.token, exp: r.exp, name, email, mobile });
+    }
+  } catch (ex) { err(ex.message === 'Failed to fetch' ? 'Could not reach the log service. Check your internet connection.' : ex.message); }
+  finally { $('signBtn').disabled = false; }
+});
+$('signOut').addEventListener('click', () => { if (S.phase === 'running') pauseRun(); saveSession(null); setSignStage(1); });
+
+function runPayload(status) {
+  const T = tally(), an = Math.min(S.t, S.dur || S.t);
+  return { id: S.runId, started: S.runStarted, status, video: S.file ? S.file.name : '', videoSeconds: Math.round(S.dur || 0), analysedSeconds: Math.round(an),
+    detector: S.modelName ? engineLabel() : '', total: T.total, counts: Object.fromEntries(CATS.map((c, i) => [c.id, T.n[i].t])),
+    dirA: T.A, dirB: T.B, dirAName: $('dirA').value, dirBName: $('dirB').value, corrections: S.edits, flow: an >= 5 ? Math.round(T.total / an * 3600) : 0,
+    device: navigator.userAgent.slice(0, 180) };
+}
+let syncBusy = false, syncAgain = null;
+async function syncRun(status) {
+  if (PREVIEW || !S.user || !S.runId) return;
+  if (syncBusy) { syncAgain = status; return; }
+  syncBusy = true; setChip('syncChip', 'busy', 'Saving to Drive');
+  try {
+    await api('run', { token: S.user.token, run: runPayload(status) });
+    S.lastSync = Date.now(); setChip('syncChip', 'ok', 'Saved to Drive ' + new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }));
+  } catch (ex) {
+    if (ex.code === 'session') { saveSession(null); setSignStage(1); toast('Your sign-in has expired. Sign in again; the counts on screen are kept.'); }
+    else { setChip('syncChip', 'bad', 'Drive log failed, retrying'); clearTimeout(S.syncTimer); S.syncTimer = setTimeout(() => syncRun(status), 20000); }
+  } finally { syncBusy = false; if (syncAgain) { const s = syncAgain; syncAgain = null; syncRun(s); } }
+}
+function scheduleSync(status) { clearTimeout(S.syncTimer); S.syncTimer = setTimeout(() => syncRun(status), 4000); }
+setInterval(() => { if (S.phase === 'running' && Date.now() - S.lastSync > 60000) syncRun('running'); }, 15000);
+
+/* ---------- Controls ---------- */
+function ui() {
+  const ph = S.phase;
+  $('startBtn').hidden = !(ph === 'empty' || ph === 'ready' || ph === 'loading');
+  $('startBtn').disabled = ph !== 'ready';
+  $('startBtn').textContent = ph === 'loading' ? 'Loading detector' : S.live ? 'Start counting' : 'Start analysis';
+  $('pauseBtn').hidden = !(ph === 'running' || ph === 'paused'); $('pauseBtn').textContent = ph === 'paused' ? 'Resume' : 'Pause';
+  $('restartBtn').hidden = !(ph === 'paused' || ph === 'done');
+  $('restartBtn').textContent = S.live ? 'Clear and count again' : 'Restart from 0:00';
+  $('stopBtn').hidden = !(S.live && (ph === 'running' || ph === 'paused'));
+  $('linkBtn').hidden = !LINKS_OK || ph === 'empty' || ph === 'running' || ph === 'loading';
+  $('changeBtn').hidden = ph === 'empty' || ph === 'running' || ph === 'loading';
+  const lock = ph === 'running' || ph === 'paused' || ph === 'loading';
+  for (const id of ['modelSel', 'rateSel', 'confSel', 'customNames', 'customSize', 'customPick']) $(id).disabled = lock;
+  $('stageHint').textContent = ph === 'ready' ? 'Drag the two round handles to place the counting line across the carriageway, where vehicles are large and clearly visible. Then start.'
+    : ph === 'running' && S.live ? 'Counting live. Keep this tab visible, with the video in a separate tab or window. Press Stop and finish when done.'
+    : ph === 'running' ? 'Analysing. Keep this tab in front. Vehicles are counted as their centre crosses the yellow line.'
+    : ph === 'paused' ? 'Paused. Resume to continue from the same point.'
+    : ph === 'done' ? 'Finished. Check the Counted vehicles strip below and correct any mistakes.'
+    : ph === 'loading' ? 'Loading the detector. The first load downloads about 75 MB; the browser usually keeps it for next time.'
+    : 'Choose a video to begin.';
+  refresh(true);
+}
+$('pick').addEventListener('click', () => $('file').click());
+$('changeBtn').addEventListener('click', () => $('file').click());
+$('file').addEventListener('change', (e) => { loadFile(e.target.files[0]); e.target.value = ''; });
+const stage = $('stage');
+stage.addEventListener('dragover', (e) => { e.preventDefault(); $('drop').classList.add('over'); });
+stage.addEventListener('dragleave', () => $('drop').classList.remove('over'));
+stage.addEventListener('drop', (e) => { e.preventDefault(); $('drop').classList.remove('over'); if (S.phase === 'running' || S.phase === 'loading') return; const f = e.dataTransfer.files[0]; if (f) loadFile(f); });
+$('startBtn').addEventListener('click', startRun);
+$('pauseBtn').addEventListener('click', () => { if (S.phase === 'running') pauseRun(); else resumeRun(); });
+$('restartBtn').addEventListener('click', () => {
+  if (S.phase !== 'paused' && S.phase !== 'done') return;
+  S.phase = 'ready'; resetRun();
+  if (!S.live) { video.pause(); try { video.currentTime = 0.05; } catch (err) { /* ignore */ } const sh = () => { video.removeEventListener('seeked', sh); fctx.drawImage(video, 0, 0, S.FW, S.FH); render(); }; video.addEventListener('seeked', sh); }
+  ui(); toast('Counts cleared. Move the line if needed, then start.');
+});
+$('stopBtn').addEventListener('click', stopLive);
+const openLinks = () => { $('linkErr').textContent = ''; $('ytHelp').hidden = true; $('linkDlg').hidden = false; $('linkUrl').focus(); };
+$('linkOpen').addEventListener('click', openLinks); $('linkBtn').addEventListener('click', openLinks);
+$('linkClose').addEventListener('click', () => { $('linkDlg').hidden = true; });
+$('linkDlg').addEventListener('click', (e) => { if (e.target === $('linkDlg')) $('linkDlg').hidden = true; });
+$('linkGo').addEventListener('click', () => loadUrl($('linkUrl').value));
+$('linkUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadUrl($('linkUrl').value); });
+$('capBtn').addEventListener('click', captureScreen);
+if (!LINKS_OK) { $('linkOpen').hidden = true; $('dropText').textContent = 'MP4, MOV or WebM. The video is analysed on this computer and is never uploaded. Vehicles are counted when they cross the yellow line.'; }
+$('modelSel').addEventListener('change', () => {
+  const v = $('modelSel').value; $('customBox').hidden = v !== 'custom';
+  $('modelHelp').textContent = v === 'custom' ? 'Uses your own model file, with its own classes.' : v === 'fast' ? 'Smaller general detector. Quicker, misses more small vehicles and knows no Indian classes.'
+    : v === 'accurate' ? 'General-purpose detector: two-wheeler, car, bus, truck, bicycle. Auto-rickshaws by yellow colour only.' : 'Trained on Indian roads (IISc UVH-26): two-wheeler, auto-rickshaw, car types, bus, mini-bus, LCV, truck, bicycle.';
+});
+$('customPick').addEventListener('click', () => $('customFile').click());
+$('customFile').addEventListener('change', async (e) => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  const buffer = await f.arrayBuffer(), bytes = new Uint8Array(buffer);
+  // Ultralytics exports carry their class names and image size as text inside the file.
+  const tail = new TextDecoder('latin1').decode(bytes.subarray(Math.max(0, bytes.length - 400000)));
+  const head = new TextDecoder('latin1').decode(bytes.subarray(0, Math.min(bytes.length, 400000)));
+  const txt = head + tail, nm = txt.match(/\{0: ['"][^}]*\}/);
+  let kind = 'ultra';
+  if (nm) { const names = [...nm[0].matchAll(/\d+: ['"]([^'"]*)['"]/g)].map((x) => x[1]); $('customNames').value = names.join(', '); }
+  else if (/yolox/i.test(f.name)) kind = 'yolox';
+  const sz = txt.match(/imgsz[^\[]{0,8}\[(\d+), ?(\d+)\]/); if (sz) { const v = String(Math.max(+sz[1], +sz[2])); if ([...$('customSize').options].some((o) => o.value === v || o.text === v)) $('customSize').value = v; }
+  S.custom = { name: f.name.replace(/\.onnx$/i, ''), buffer, kind, sig: f.name + ':' + f.size + ':' + Date.now() };
+  $('customInfo').textContent = `${f.name} loaded (${(f.size / 1048576).toFixed(1)} MB).` + (nm ? ' Class names were read from the file.' : ' Enter the class names in model order.');
+});
+for (const id of ['customNames', 'customSize']) $(id).addEventListener('change', () => { if (S.custom) S.custom.sig = S.custom.name + ':' + Date.now(); });
+const syncDirNames = () => { const a = $('dirA').value || 'Direction A', b = $('dirB').value || 'Direction B'; $('dirALab').textContent = a; $('dirBLab').textContent = b; $('thA').textContent = a; $('thB').textContent = b; };
+$('dirA').addEventListener('input', syncDirNames); $('dirB').addEventListener('input', syncDirNames);
+$('showBoxes').addEventListener('change', () => { if (S.phase !== 'empty') render(); });
+
+/* ---------- Boot ---------- */
+buildStatic();
+$('previewBanner').hidden = !PREVIEW;
+S.user = PREVIEW ? null : loadSession();
+showUser(); drawChart(); ui();
+if (!('Worker' in window) || !('OffscreenCanvas' in window) || !window.WebAssembly) warn('This browser is too old to run the detector. Use a current version of Chrome or Edge.', 'crit');
+
+// Hooks for automated checks.
+window.__arc = { S, P, CATS, CI, trackStep, resetRun, tally, loadFile, loadUrl, useStream, youtubeId, startRun, buildCsv, classMapFromNames };
+})();
+</script>
+</body>
+</html>
