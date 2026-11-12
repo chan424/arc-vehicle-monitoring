@@ -453,9 +453,9 @@ const COCO_NAMES = { 1: 'bicycle', 2: 'car', 3: 'motorcycle', 5: 'bus', 7: 'truc
 const RUNTIME = { parts: ['ort/runtime.part0.wasm', 'ort/runtime.part1.wasm'], bytes: 21872216 };
 const MODELS = {
   // IISc UVH-26 detector, trained on Indian urban traffic (YOLOv11-S).
-  india: { name: 'UVH-26 YOLOv11-S', kind: 'ultra', size: 640, bytes: 37948643, parts: ['models/uvh26_s.part0.js', 'models/uvh26_s.part1.js', 'models/uvh26_s.part2.js', 'models/uvh26_s.part3.js', 'models/uvh26_s.part4.js'], names: ['Hatchback', 'Sedan', 'SUV', 'MUV', 'Bus', 'Truck', 'Three-wheeler', 'Two-wheeler', 'LCV', 'Mini-bus', 'Tempo-traveller', 'Bicycle', 'Van', 'Others'] },
-  accurate: { name: 'YOLOX-S', kind: 'yolox', size: 640, bytes: 35858002, parts: ['models/yolox_s.part0.js', 'models/yolox_s.part1.js', 'models/yolox_s.part2.js', 'models/yolox_s.part3.js'] },
-  fast: { name: 'YOLOX-Tiny', kind: 'yolox', size: 416, bytes: 20219662, parts: ['models/yolox_tiny.part0.js', 'models/yolox_tiny.part1.js', 'models/yolox_tiny.part2.js'] }
+  india: { name: 'UVH-26 YOLOv11-S', kind: 'ultra', size: 640, bytes: 37948643, parts: ['uvh26_s.part0.js', 'uvh26_s.part1.js', 'uvh26_s.part2.js', 'uvh26_s.part3.js', 'uvh26_s.part4.js'], names: ['Hatchback', 'Sedan', 'SUV', 'MUV', 'Bus', 'Truck', 'Three-wheeler', 'Two-wheeler', 'LCV', 'Mini-bus', 'Tempo-traveller', 'Bicycle', 'Van', 'Others'] },
+  accurate: { name: 'YOLOX-S', kind: 'yolox', size: 640, bytes: 35858002, parts: ['yolox_s.part0.js', 'yolox_s.part1.js', 'yolox_s.part2.js', 'yolox_s.part3.js'] },
+  fast: { name: 'YOLOX-Tiny', kind: 'yolox', size: 416, bytes: 20219662, parts: ['yolox_tiny.part0.js', 'yolox_tiny.part1.js', 'yolox_tiny.part2.js'] }
 };
 
 const hasRVFC = 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
