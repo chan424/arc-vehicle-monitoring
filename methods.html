@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Methods for ARC Vehicle Monitoring: YOLO11s and YOLOX weights, UVH-26 and COCO class lists, ONNX Runtime Web, counting rules, licences, and limits.">
+<title>Methods — ARC Vehicle Monitoring</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;700;900&family=Overpass+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<a class="skip" href="#content">Skip to methods</a>
+<header class="board">
+  <div class="board-in">
+    <div class="brand">
+      <svg width="42" height="52" viewBox="0 0 42 52" aria-hidden="true">
+        <path d="M3 50V19C3 9 11 2 21 2s18 7 18 17v31z" fill="#fff" stroke="#0f1f18" stroke-width="2.5"/>
+        <path d="M4.3 22v-3C4.3 9.8 11.8 3.3 21 3.3S37.7 9.8 37.7 19v3z" fill="#f6c20a"/>
+        <text x="21" y="18.5" text-anchor="middle" font-family="Overpass, Arial, sans-serif" font-weight="900" font-size="11.5" fill="#0f1f18">ARC</text>
+        <text x="21" y="36" text-anchor="middle" font-family="Overpass, Arial, sans-serif" font-weight="900" font-size="12" fill="#0f1f18">VM</text>
+        <text x="21" y="46" text-anchor="middle" font-family="Overpass, Arial, sans-serif" font-weight="700" font-size="6.5" fill="#0f1f18">COUNT</text>
+      </svg>
+      <div>
+        <h1>ARC Vehicle Monitoring</h1>
+        <p>Methods, models, licences, and what a count means</p>
+      </div>
+    </div>
+    <nav class="nav" aria-label="Site">
+      <a href="index.html">Count</a>
+      <a href="methods.html" aria-current="page">Methods</a>
+    </nav>
+  </div>
+</header>
+
+<main id="content">
+  <section class="card">
+    <div class="card-b prose">
+      <p class="page-kicker">Methods</p>
+      <h2>What this page is</h2>
+      <p>The counter draws a line on a video and adds one vehicle each time a tracked box crosses it. Everything below is taken from this repository’s code and weight files, or from the papers and releases those files point at. Where a number was published by someone else, the sentence says so. This site has not measured its own accuracy on a labelled video, so it does not report one.</p>
+
+      <h2>Where the work runs</h2>
+      <p>The page is static. A Web Worker (<code>worker.js</code>) loads <a href="https://github.com/microsoft/onnxruntime">ONNX Runtime Web 1.22.0</a> (<code>ort/ort.js</code>, MIT Licence, Copyright Microsoft Corporation) and the chosen weights. The runtime binary is the concatenation of <code>ort/runtime.part0.wasm</code> and <code>ort/runtime.part1.wasm</code>, 21,872,216 bytes, passed in as <code>ort.env.wasm.wasmBinary</code>. The worker sets <code>numThreads = 1</code> and <code>proxy = false</code>. One thread does not need cross-origin isolation, so GitHub Pages does not have to send COOP or COEP headers, and the <code>.wasm</code> response type is not used as a module thread. If the browser has WebGPU, the worker tries it, then compares the first real frame with a WASM session. A relative difference above 0.02, or a GPU failure, drops back to WASM.</p>
+      <p>Weights are stored as base64 inside JavaScript files so each piece stays under GitHub’s file-size limit. The worker reads the text, base64-decodes it, and checks the byte count. The video frames never leave the browser. An optional Google Apps Script address in <code>config.js</code> receives the signed-in operator and the count summary, not the video. If that address is empty, the page runs in preview mode and logs nothing.</p>
+      <p>An HLS link loads <code>hls.js</code> 1.5.17 from jsDelivr, and only then. That library is published under Apache-2.0. The typeface is Overpass, served by Google Fonts under the SIL Open Font Licence, with system fonts as the fallback. Neither is required for a count.</p>
+
+      <h2>Bundled detectors</h2>
+      <p>The Detector menu has three bundled files and a slot for your own ONNX file. The default is the Indian-traffic file.</p>
+
+      <h3>Indian traffic — Ultralytics YOLO11s</h3>
+      <p>Five files, <code>uvh26_s.part0.js</code> through <code>uvh26_s.part4.js</code>, decode to a 37,948,643-byte ONNX model. SHA-256 of those bytes is <code>56cfc7577c0def987ad14052220ad3f9695d9e939ca9d935a9b9be489d8cc143</code>. The ONNX metadata stored in the file says:</p>
+      <ul>
+        <li>Description: <code>Ultralytics YOLO11s model trained on /home/vkovvali/dileepank/datasets/hackathon_blurred_1st_week/data.yaml</code></li>
+        <li>Author string: Ultralytics. Date: 2026-11-12T16:12:15.511265+05:30. Ultralytics version: 8.4.211.</li>
+        <li>Licence string in the file: <code>AGPL-3.0 License (https://ultralytics.com/license)</code></li>
+        <li>Input size recorded in the file: <code>[640, 640]</code>. Export options include <code>opset: 17</code>, <code>simplify: true</code>, <code>nms: false</code>, <code>end2end: false</code>. The graph producer is PyTorch 2.15.0.</li>
+        <li>Class names, in order: Hatchback, Sedan, SUV, MUV, Bus, Truck, Three-wheeler, Two-wheeler, LCV, Mini-bus, tempo-traveller, bicycle, Van, Others.</li>
+      </ul>
+      <p>That name list matches <a href="https://huggingface.co/iisc-aim/UVH-26/blob/main/uvh_classes.txt"><code>uvh_classes.txt</code></a> published by AIM at the Indian Institute of Science with the UVH-26 models (Hatchback through Others, with tempo-traveller and bicycle in lower case). The training path contains <code>hackathon_blurred_1st_week</code> and a home directory <code>vkovvali</code>. Vijay Kovvali is an author of the UVH-26 technical report, which describes the Week 1 release of anonymised Bengaluru Safe City frames. Those two facts are consistent. This repository does not contain a checksum against the published <code>UVH-26-MV-YOLOv11-S.pt</code> file on Hugging Face, and that release is a PyTorch checkpoint rather than this ONNX file. The accuracy table further down is the paper’s table for their published YOLO11-S. It is not a measurement of this file.</p>
+      <p>The report is Sharma, Mhatre, Gawali, Bokkasam, Kishore, Pattanaik, Rambha, Pinjari, Kovvali, Chakraborty, Rathore, Krishnapuram and Simmhan, “The Urban Vision Hackathon Dataset and Models: Towards Image Annotations and Accurate Vision Models for Indian Traffic”, arXiv:<a href="https://arxiv.org/abs/2511.02563">2511.02563</a>, November 2025. From that report, the dataset is 26,646 frames at 1080p, sampled from about 2,800 Bengaluru Safe City cameras over four weeks, annotated by 565 students, with about 1.8 million boxes. Consensus labels were made with majority voting (UVH-26-MV) and with STAPLE (UVH-26-ST). The public models described in the report were fine-tuned on the anonymised UVH-26-MV split. The dataset is released under <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. The report says the YOLO-family weights follow the AGPL-3.0 terms of the Ultralytics code they were fine-tuned from, while DAMO-YOLO and RT-DETRv2 weights in that release follow Apache-2.0. This site bundles only the YOLO11s ONNX file, not the dataset images and not the other five architectures.</p>
+      <p class="call">The file declares AGPL-3.0, and Ultralytics distributes YOLO11 under AGPL-3.0. Serving those weights from a public site can count as network use of an AGPL program. This sentence records the licence string. It is not legal advice.</p>
+
+      <h3>What the UVH-26 paper reports for its YOLO11-S</h3>
+      <p>Appendix C of arXiv:2511.02563, anonymised UVH-26-MV, held-out gold set of 400 images that were not used in fine-tuning. “Others” is left out of their average. These figures are copied from that paper. They describe the authors’ published YOLO11-S checkpoint, not a test run of the ONNX file in this repository.</p>
+      <div class="tblwrap">
+        <table>
+          <caption>Table 7, overall, published YOLO11-S</caption>
+          <thead><tr><th>Metric</th><th class="num">Published YOLO11-S</th></tr></thead>
+          <tbody>
+            <tr><td>mAP(50)</td><td class="num">0.4486</td></tr>
+            <tr><td>mAP(75)</td><td class="num">0.3918</td></tr>
+            <tr><td>mAP(50:95)</td><td class="num">0.3391</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="tblwrap">
+        <table>
+          <caption>Table 6, per-class AP at IoU 0.50:0.95, published YOLO11-S. The paper notes that two-wheeler and bicycle boxes include the rider, unlike COCO.</caption>
+          <thead><tr><th>Class in the paper</th><th class="num">AP(50:95)</th></tr></thead>
+          <tbody>
+            <tr><td>Cycle</td><td class="num">0.2075</td></tr>
+            <tr><td>2-Wheeler</td><td class="num">0.4249</td></tr>
+            <tr><td>3-Wheeler</td><td class="num">0.5747</td></tr>
+            <tr><td>LCV</td><td class="num">0.4392</td></tr>
+            <tr><td>Van</td><td class="num">0.3913</td></tr>
+            <tr><td>Tempo-traveller</td><td class="num">0.7062</td></tr>
+            <tr><td>Hatchback</td><td class="num">0.3624</td></tr>
+            <tr><td>Sedan</td><td class="num">0.3626</td></tr>
+            <tr><td>SUV</td><td class="num">0.1976</td></tr>
+            <tr><td>MUV</td><td class="num">0.1257</td></tr>
+            <tr><td>Mini-bus</td><td class="num">0.0178</td></tr>
+            <tr><td>Bus</td><td class="num">0.2118</td></tr>
+            <tr><td>Truck</td><td class="num">0.3861</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>On the three classes they treat as shared with COCO (car, bus, truck), Table 5 gives the published YOLO11-S a mAP(50:95) of 0.4293 after majority-voting fine-tuning and 0.3055 for the COCO-initialised weights. The abstract’s range of about 8.4 to 31.5 percent mAP(50:95) improvement is across the six published architectures, not a figure computed by this site.</p>
+      <p>The same paper says fine-grained car types are visually similar, so Hatchback and Sedan are harder than the coarser car class, and Mini-bus is sparse and easy to confuse with Bus. That is why the screen collapses those names into the IRC-style bins below, and why the export still keeps the detector’s own name.</p>
+
+      <h3>General — Megvii YOLOX-S and YOLOX-Tiny</h3>
+      <p>These two files were checked, byte for byte, against the ONNX assets in Megvii release <a href="https://github.com/Megvii-BaseDetection/YOLOX/releases/tag/0.1.1rc0">0.1.1rc0</a> of <a href="https://github.com/Megvii-BaseDetection/YOLOX">Megvii-BaseDetection/YOLOX</a>.</p>
+      <div class="tblwrap">
+        <table>
+          <thead><tr><th>Menu</th><th>Release asset</th><th class="num">Bytes</th><th>SHA-256</th></tr></thead>
+          <tbody>
+            <tr><td>General (YOLOX-S, 640)</td><td><code>yolox_s.onnx</code></td><td class="num">35,858,002</td><td><code>c5c2d13e59ae883e6af3b45daea64af4833a4951c92d116ec270d9ddbe998063</code></td></tr>
+            <tr><td>General, fast (YOLOX-Tiny, 416)</td><td><code>yolox_tiny.onnx</code></td><td class="num">20,219,662</td><td><code>427cc366d34e27ff7a03e2899b5e3671425c262ea2291f88bb942bc1cc70b0f7</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The repository is Apache-2.0. The ONNX headers name PyTorch 1.7 as the producer and do not store a class list. The page assumes the 80 COCO categories in the standard index order, and it keeps only bicycle (1), car (2), motorcycle (3), bus (5) and truck (7). Every other index, including person, is discarded. Ge, Liu, Wang, Li and Sun, “YOLOX: Exceeding YOLO Series in 2021”, arXiv:<a href="https://arxiv.org/abs/2107.08430">2107.08430</a>. COCO is Lin and others, “Microsoft COCO: Common Objects in Context”, ECCV 2014. Megvii’s README for that release line reports COCO val box mAP at IoU 0.50:0.95 of 40.5 for YOLOX-S at 640, and 32.8 for YOLOX-Tiny at 416. Those numbers are Megvii’s COCO scores for the model variants. This site did not repeat the COCO evaluation, and a COCO score is not an accuracy for Indian CCTV.</p>
+      <p>On the General detectors only, a colour rule can relabel a car, bus or truck box as an auto-rickshaw. The box aspect ratio (height / width) must sit between 0.6 and 1.9, and at least 9 percent of a 20×20 colour sample must fall in an amber-to-yellow range (not dark, not grey, red at least 0.85× green, green at least 0.6× red, blue under 0.7× green). The rule is a heuristic in this page. It is not part of YOLOX, and it is off for the Indian-traffic model, which already has a three-wheeler class.</p>
+
+      <h3>Your own ONNX file</h3>
+      <p>A local <code>.onnx</code> file is read in the browser and is not uploaded. If the tail of the file contains an Ultralytics names dictionary such as <code>{0: 'Hatchback', …}</code>, those names are filled in. Otherwise you type them, in model order. Names are mapped with the same rules as the bundled Indian model. A file whose name contains “yolox” is decoded as YOLOX; anything else is decoded as an Ultralytics export (RGB, 0–1, letterbox centred on grey 114). Input sizes offered are 416, 512, 640, 800, 960 and 1280.</p>
+
+      <h2>How a model class becomes a screen class</h2>
+      <p>The tiles, the chart and the total use nine fixed bins. The detector’s own name is kept on each event and written to the export as “Detector sub-class”. Tractor has no detector class. The + button on a tile adds one by hand.</p>
+      <div class="tblwrap">
+        <table>
+          <thead><tr><th>Name contains</th><th>Screen class</th></tr></thead>
+          <tbody>
+            <tr><td>person, pedestrian, rider, animal, cow, dog</td><td>Ignored</td></tr>
+            <tr><td>cycle rickshaw, cart, hand, animal-drawn</td><td>Other</td></tr>
+            <tr><td>bicycle, cycle, pedal</td><td>Bicycle</td></tr>
+            <tr><td>auto, three, 3-wheeler, rickshaw, tuk, toto</td><td>Auto-rickshaw</td></tr>
+            <tr><td>two, 2-wheeler, motor, bike, scooter, moped</td><td>Two-wheeler</td></tr>
+            <tr><td>bus, traveller</td><td>Bus (this also catches Mini-bus and tempo-traveller, because “traveller” is tested before “tempo”)</td></tr>
+            <tr><td>tractor</td><td>Tractor</td></tr>
+            <tr><td>LCV, tempo, pickup, mini-truck, light</td><td>LCV</td></tr>
+            <tr><td>truck, lorry, HCV, MAV, axle, trailer, tanker, tipper, goods</td><td>Truck</td></tr>
+            <tr><td>car, hatch, sedan, SUV, MUV, van, jeep, taxi, cab</td><td>Car / Jeep / Van</td></tr>
+            <tr><td>vehicle, other</td><td>Other</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The first matching row wins. A name that matches none of them is ignored.</p>
+
+      <h2>From a frame to a count</h2>
+      <p>The default reads 12 frames per second of video time (the menu also offers 8 and 15). Recorded video is played only fast enough to keep the detector busy, between 1× and 4×. Live video and screen capture are sampled in real time whenever the detector is free. Hiding the tab pauses a recording, because browsers stop video in background tabs. A live source cannot be paused that way: seconds spent hidden are reported as missed, and the vehicles that passed then are not counted.</p>
+      <ol>
+        <li><b>Letterbox.</b> The frame is scaled to fit the model square. Empty pixels are grey 114. YOLOX is pinned to the top left. The Ultralytics file is centred. YOLOX is fed as BGR in 0–255. The Ultralytics file is fed as RGB in 0–1. That split is in <code>worker.js</code>.</li>
+        <li><b>Decode.</b> YOLOX uses the anchor-free grid at strides 8, 16 and 32: centre is <code>(offset + grid) × stride</code>, size is <code>exp(wh) × stride</code>, and the score is objectness times the best class probability. The Ultralytics file has no NMS in the graph. Its output is read as <code>[1, 4 + classes, N]</code> or the transpose, and the score is the best class probability. Boxes under 4 pixels on a side are dropped. The decoder keeps anything at or above 0.12. That floor is fixed in the page; it is not the menu.</li>
+        <li><b>NMS.</b> Same-class boxes overlap-suppress at IoU 0.45. Different-class boxes suppress only above IoU 0.6, so a car and a truck on the same van do not both survive, while a rider beside a car still can. A box covering more than 20 percent of the frame, with score under 0.75, is dropped when it swallows a smaller box.</li>
+        <li><b>Track.</b> Boxes at or above the menu confidence (default 0.40) are matched first, by greedy overlap with a short constant-velocity prediction. A young track may also match by distance if the boxes are a similar size. Scores between 0.12 and the menu value are used only to extend a track that has already been seen twice. The class is a score-weighted vote, so a later, clearer view can change the label until you edit it by hand.</li>
+        <li><b>Cross.</b> The line has two sides. A track counts when its centre changes side, the crossing point lies on the segment (with a 3 percent slack), the track has been seen at least 3 times, it has moved at least half of its smaller side since it was born, and it is at least 0.4 of that smaller side past the line. Direction A is the positive side of the line as drawn; B is the other way. The arrow labels on the picture show which is which.</li>
+        <li><b>One vehicle, one count.</b> A track that dies and reappears on the line within about 2.5 seconds, close to an existing count in the same direction, is attached to that count instead of adding another. Two overlapping boxes that cross together (cab and body, rider and load) also share one count when the overlap is high, or when they voted for the same class and one box sits inside the other.</li>
+      </ol>
+      <p>The flow rate is <code>round(count / analysed seconds × 3600)</code>, and it stays blank until at least five seconds have been analysed. The chart picks a bin from 5 seconds up to 60 minutes so that a run has at most 36 bars. The share of each class is that class divided by the vehicles that have not been removed.</p>
+
+      <h2>Exports</h2>
+      <p>CSV and JSON contain the same count: a header, the class table, the time bins, the detector sub-class totals, and one row per vehicle that has not been removed. JSON adds the class id, whether the source was live, and how many rows were removed. It does not embed the thumbnail pictures. Copy table puts the same CSV, with tabs, on the clipboard. Hand-added rows are marked, and so are rows whose class you changed.</p>
+
+      <h2>Sign-in</h2>
+      <p>When <code>config.js</code> has an endpoint, the page asks for a name, an email and a 10-digit Indian mobile number, then a 6-digit code from that email. The session token is kept in <code>localStorage</code> under <code>arc.session</code>. During a run the page posts a summary: run id, video file name, duration, detector name, totals by class, the two direction totals and names, the correction count, the flow, and a shortened user-agent. It does not post pixels. Clearing the endpoint switches the whole log off and removes the sign-in gate. That is the preview mode described on the count page.</p>
+
+      <h2>Licences and credit</h2>
+      <div class="tblwrap">
+        <table>
+          <thead><tr><th>Piece</th><th>Where it comes from</th><th>Licence as published</th></tr></thead>
+          <tbody>
+            <tr><td>YOLO11s ONNX in this repo</td><td>Metadata inside the file; class list matches IISc UVH-26</td><td>AGPL-3.0, as written in the file and by Ultralytics</td></tr>
+            <tr><td>UVH-26 dataset</td><td><a href="https://huggingface.co/datasets/iisc-aim/UVH-26">huggingface.co/datasets/iisc-aim/UVH-26</a>, arXiv:2511.02563</td><td>CC BY 4.0. The images themselves are not in this repository.</td></tr>
+            <tr><td>YOLOX-S and YOLOX-Tiny ONNX</td><td>Megvii release 0.1.1rc0, byte-identical</td><td>Apache-2.0</td></tr>
+            <tr><td>COCO category index</td><td>Lin and others, ECCV 2014. Used only as the class order of the YOLOX head.</td><td>COCO annotations are CC BY 4.0. No COCO images are shipped here.</td></tr>
+            <tr><td>ONNX Runtime Web 1.22.0</td><td>Microsoft, file header of <code>ort/ort.js</code></td><td>MIT</td></tr>
+            <tr><td>hls.js 1.5.17</td><td>Loaded from jsDelivr only for an <code>.m3u8</code> link</td><td>Apache-2.0, as published with that library</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The application source in this repository had no licence file of its own when this methods page was written. Third-party terms above are not changed by that.</p>
+      <p>Please cite UVH-26 if you use the Indian-traffic detector, and cite YOLOX if you use the general detectors. The BibTeX is on the <a href="https://huggingface.co/iisc-aim/UVH-26">UVH-26 model card</a> and in the YOLOX README.</p>
+
+      <h2>Limits</h2>
+      <ul>
+        <li>This is not a certified traffic census. A queue at a stop line, a camera that moves, rain, night, and vehicles hiding each other will each move the count. The page asks you to check a few minutes by hand before using the total.</li>
+        <li>No accuracy figure on this page was measured by running these ONNX files on a labelled set. The UVH-26 numbers are the paper’s. The YOLOX numbers are Megvii’s COCO numbers.</li>
+        <li>There is no tractor class in either bundled head. Goods three-wheelers and passenger autos share one three-wheeler class on the Indian model, and one auto tile on the screen.</li>
+        <li>YOLOX was trained on COCO photographs, not on Indian CCTV. It has no auto-rickshaw, LCV, mini-bus or tempo-traveller class except for the yellow-colour rule.</li>
+        <li>The first load of the Indian model plus the runtime is on the order of 60 MB of weights and runtime (about 38 MB and 22 MB), decoded in the browser. Later visits reuse the browser cache when the host allows it. Without WebGPU the larger models are slow; the page says so after a few frames and points at YOLOX-Tiny.</li>
+        <li>A direct video link plays only if that host sends CORS headers the browser accepts. YouTube and other players are counted by capturing the tab, and only while this tab stays visible.</li>
+        <li>Browsers generally will not decode AVI or arbitrary CCTV files. The page asks for MP4 (H.264), MOV or WebM.</li>
+      </ul>
+
+      <h2>What is unknown here</h2>
+      <ul>
+        <li>Whether the YOLO11s ONNX is a conversion of the exact Hugging Face file <code>UVH-26-MV-YOLOv11-S.pt</code>. The class list and the training-path name line up with UVH-26 Week 1. A checksum against that checkpoint was not made, because the published file is PyTorch and this one is ONNX.</li>
+        <li>The train and validation loss, the epoch, and the image counts inside <code>hackathon_blurred_1st_week/data.yaml</code>. That file is not in the repository. Only the path string is.</li>
+        <li>How this counter’s totals compare with a manual count on any particular road. That depends on the camera and the video, and it has not been measured in this repository.</li>
+      </ul>
+      <p><a href="index.html">Back to the counter</a>.</p>
+    </div>
+  </section>
+</main>
+<footer class="site-foot">
+  <p><a href="index.html">ARC Vehicle Monitoring</a>. Facts on this page come from <code>worker.js</code>, <code>js/app.js</code>, the ONNX metadata, the Megvii 0.1.1rc0 release, and the UVH-26 report (arXiv:2511.02563).</p>
+</footer>
+</body>
+</html>
